@@ -1,0 +1,20 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+body { background: #080c12 url('/assets/backgrounds/battlefield_v0.png') center / cover no-repeat; font-family: Inter, system-ui, sans-serif; }
+/* Phaser Scale Manager (FIT + CENTER_BOTH) owns the canvas transform.
+   #app only needs to fill the viewport; do NOT force canvas width/height here —
+   that is what caused "fit width, crop vertically" on Android. */
+#app {
+  width: 100vw;
+  height: 100dvh; /* dvh so Android status/navigation bars don't cover the canvas */
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+}
+#app canvas {
+  display: block;
+  max-width: 100vw;
+  max-height: 100dvh;
+  margin: 0 auto;
+}

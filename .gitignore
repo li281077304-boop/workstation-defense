@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+dist/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Outputs / previews (regenerable)
+outputs/
+
+# Work scratch
+work/
+
+# OS
+.DS_Store
+
+# Capacitor / Android
+android/.gradle/
+android/local.properties
+android/app/build/
