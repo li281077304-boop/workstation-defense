@@ -8,12 +8,17 @@ import { ART, PLANT_VALUES } from '../ui/assets';
 import { Sfx, ensureAudio } from '../sound';
 import { getAudioManager } from '../audio/AudioManager';
 import { addLocalRecord, loadLocalRecords } from '../records/LocalRecords';
+import { createCellMetrics, placeDefender, placeEnemy, getCellGroundPoint, placeSprite, type PlacementResult } from './SpritePlacement';
+import { defaultMeta, getEnemyMeta, type SpriteMeta } from './SpriteMeta';
 
 const LEFT = L.board.defenseLeft, TOP = L.board.top, ROW = L.board.rowHeight;
 const defenseX = (col: number) => LEFT + col * L.board.defenseCellWidth;
 const fieldX = (col: number) => L.board.battlefieldLeft + col * L.board.battlefieldCellWidth;
 const defenseColAt = (x: number) => x < LEFT || x >= LEFT + BOARD.defenseCols * L.board.defenseCellWidth ? -1 : Math.floor((x - LEFT) / L.board.defenseCellWidth);
 const rowAt = (y: number) => Math.floor((y - TOP) / ROW);
+
+/** 统一 Sprite Placement 引擎使用的格子度量 (从 layout 常量派生,只计算一次) */
+const CELL_METRICS = createCellMetrics(L.board);
 /** Vite's development server is intentionally the only build exposing test controls. */
 const isTestBuild = () => window.location.port === '5173';
 
@@ -109,6 +114,9 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private productPanel: HTMLDivElement | null = null;
   private gameOverRecorded = false;
   private gameOverRecordMessage = '';
+  /** Sprite Lab Lite 调试覆盖层 */
+  private spriteLabLayer: Phaser.GameObjects.Container | null = null;
+  private spriteLabVisible = false;
   constructor() { super('game'); }
 
   update() {
@@ -149,6 +157,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.handlePointerUp(p));
     this.input.keyboard?.on('keydown-R', () => this.restartRun());
     this.input.keyboard?.on('keydown-D', () => this.toggleDifficultyPanel());
+    this.input.keyboard?.on('keydown-L', () => this.toggleSpriteLab());
     this.createDifficultyPanel();
     this.render();
     this.installBackgroundSaveHandlers();
@@ -1174,6 +1183,116 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     if (runs) runs.innerHTML = this.runSummaries.length ? `<strong>已结束对局（死亡记录）</strong><br>${this.runSummaries.map((run, index) => `#${index + 1} 分${run.score} · Turn ${run.turn} · 最高${run.highestPlantValue}<br>PlantPower ${run.plantPower} · 奖励${percent(run.rewardCaptureRate)} · 火力${percent(run.firepowerUtilization)} · 死亡压力${percent(run.deathPressureRatio)}<br>死亡前10T敌人数 ${run.lastTenEnemyCounts.join(' → ')}`).join('<hr style="border-color:#59675c">')}<hr style="border-color:#59675c">` : '';
   }
 
+  /* ─── Sprite Lab Lite: 调试面板 ─── */
+
+  /** 切换 Sprite Lab Lite 显示/隐藏 (按 L 键或从 Debug 面板触发) */
+  private toggleSpriteLab() {
+    if (this.spriteLabVisible) {
+      this.closeSpriteLab();
+    } else {
+      this.openSpriteLab();
+    }
+  }
+
+  private closeSpriteLab() {
+    this.spriteLabLayer?.destroy(true);
+    this.spriteLabLayer = null;
+    this.spriteLabVisible = false;
+  }
+
+  /**
+   * Sprite Lab Lite — 在游戏画面上叠加一个调试层,显示:
+   * - 5 条 Lane 的格子网格
+   * - Ground Point 标记(每个格子的脚底位置)
+   * - 测试精灵:小/宽/高 Defender + 普通 Enemy + 2x2 Enemy
+   * - Sprite Bounds 边框
+   */
+  private openSpriteLab() {
+    this.closeSpriteLab();
+    const layer = this.add.container(0, 0).setDepth(500);
+    this.spriteLabLayer = layer;
+
+    const g = this.add.graphics().setDepth(501);
+    layer.add(g);
+
+    // 绘制防守区 + 战场区格子
+    for (let r = 0; r < BOARD.rows; r++) {
+      const y = TOP + r * ROW;
+      // 防守格
+      for (let c = 0; c < BOARD.defenseCols; c++) {
+        const x = defenseX(c);
+        g.lineStyle(2, 0x00ff00, 0.5).strokeRect(x, y, L.board.defenseCellWidth, ROW);
+        // Ground Point
+        const gp = getCellGroundPoint(r, c, 'defense', CELL_METRICS);
+        g.fillStyle(0xff0000, 0.8).fillCircle(gp.x, gp.y, 4);
+        g.lineStyle(1, 0xff0000, 0.4).strokeCircle(gp.x, gp.y, 8);
+      }
+      // 战场格(只画前 3 列避免太密)
+      for (let c = 0; c < 3; c++) {
+        const x = fieldX(c);
+        g.lineStyle(2, 0x00ffff, 0.3).strokeRect(x, y, L.board.battlefieldCellWidth, ROW);
+        const gp = getCellGroundPoint(r, c, 'battlefield', CELL_METRICS);
+        g.fillStyle(0xff00ff, 0.6).fillCircle(gp.x, gp.y, 3);
+      }
+    }
+
+    // 测试精灵组
+    const testCases: Array<{ label: string; row: number; col: number; gridType: 'defense' | 'battlefield'; meta: SpriteMeta; frame: string; color: number }> = [
+      { label: 'Defender\n(标准)', row: 1, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-def' }, frame: 'plant-1', color: 0x00ff00 },
+      { label: 'Defender\n(大)', row: 3, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-big', artScale: 1.15 }, frame: 'plant-256', color: 0x88ff00 },
+      { label: 'Enemy\n1x1', row: 1, col: 0, gridType: 'battlefield', meta: { ...defaultMeta, id: 'test-e1' }, frame: 'enemy-basic-01', color: 0xff8800 },
+      { label: 'Enemy\n2x2', row: 2, col: 0, gridType: 'battlefield', meta: { ...defaultMeta, id: 'test-e2', footprintW: 2, footprintH: 2 }, frame: 'enemy-large-01', color: 0xff0088 },
+    ];
+
+    for (const tc of testCases) {
+      const p = placeSprite({ row: tc.row, col: tc.col, gridType: tc.gridType, meta: tc.meta, metrics: CELL_METRICS });
+      // 测试精灵容器
+      const container = this.add.container(p.x, p.y).setDepth(510);
+      layer.add(container);
+
+      const sprite = this.add.sprite(0, 0, tc.frame);
+      fitSprite(sprite, p.displayWidth, p.displayHeight);
+      sprite.setScale(sprite.scale * p.scale);
+      sprite.setOrigin(p.originX, p.originY);
+      sprite.setAlpha(0.85);
+      container.add(sprite);
+
+      // Bounds 边框
+      const bw = sprite.displayWidth, bh = sprite.displayHeight;
+      const bounds = this.add.rectangle(
+        -bw / 2 * (p.originX - 0.5) * 2,
+        -bh / 2 * (p.originY - 0.5) * 2 - bh * (1 - p.originY),
+        bw, bh
+      ).setStrokeStyle(2, tc.color, 0.7).setFillStyle(tc.color, 0.08).setOrigin(p.originX, p.originY);
+      container.add(bounds);
+
+      // 标签
+      const label = this.add.text(0, -p.displayHeight * 0.55, tc.label, {
+        fontSize: '16px', color: '#fff', stroke: '#000', strokeThickness: 4, fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(511);
+      container.add(label);
+
+      // Ground Point 十字标记
+      const crossH = this.add.line(p.groundX - 12, p.groundY, p.groundX + 12, p.groundY, 0xff0000, 1).setDepth(511);
+      const crossV = this.add.line(p.groundX, p.groundY - 12, p.groundX, p.groundY + 12, 0xff0000, 1).setDepth(511);
+      layer.add(crossH); layer.add(crossV);
+    }
+
+    // 图例
+    const legend = this.add.text(20, TOP, `Sprite Lab Lite\n━━━━━━━━━━\n🟢 Defense Grid\n🔵 Battlefield Grid\n🔴 Ground Point\n⬜ Sprite Bounds`, {
+      fontSize: '16px', color: '#f7f1d0', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0, 0).setDepth(520);
+    layer.add(legend);
+
+    // 关闭提示
+    const hint = this.add.text(L.width - 20, L.height - 20, '按 L 关闭 Sprite Lab', {
+      fontSize: '18px', color: '#f7f1d0', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(1, 1).setDepth(520);
+    layer.add(hint);
+
+    this.spriteLabVisible = true;
+  }
+
   /* ─── Sprite-based rendering ─── */
 
   private render(enemyColOffset = 0, visualStart?: CombatVisualStart) {
@@ -1226,18 +1345,25 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       }
     }
 
-    // Plants — sprite based (keep aspect ratio, fit within cell)
+    // Plants — sprite based (统一 Placement 系统: Ground Point + Bottom-Center Pivot)
     for (let r = 0; r < BOARD.rows; r++) {
       for (let c = 0; c < BOARD.defenseCols; c++) {
         const p = s.plants[r][c];
         if (!p) continue;
-        const cx = defenseX(c) + L.board.defenseCellWidth / 2;
-        const cy = TOP + r * ROW + 82;
+        // 使用统一 Placement 引擎计算位置/缩放/深度
+        const placement = placeDefender(r, c, CELL_METRICS);
         const frame = PLANT_FRAME(p.value);
-        const entity = this.addBreathingEntity(cx, cy, frame, 128, 128, 20, 3, 700 + (r * 80 + c * 45), p.id);
+        const entity = this.addBreathingEntity(
+          placement.x, placement.y, frame,
+          placement.displayWidth, placement.displayHeight,
+          placement.depth, 3, 700 + (r * 80 + c * 45), p.id
+        );
+        // 设置 bottom-center pivot (pivotY=1.0 = 脚底对齐 Ground Point)
+        const sprite = entity.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
+        if (sprite) sprite.setOrigin(placement.originX, placement.originY);
 
-        // Value label on top
-        this.add.text(cx, cy - 62, String(p.value), { fontSize: '28px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(21);
+        // Value label on top (相对 Ground Point 向上偏移)
+        this.add.text(placement.x, placement.groundY - 62, String(p.value), { fontSize: '28px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(21);
 
         // Selection highlight
         if (this.selected !== 'birth' && this.selected?.row === r && this.selected.col === c) {
@@ -1274,20 +1400,29 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       pspr.add(this.add.text(0, 0, String(pickup.value), { fontSize: '19px', color: '#17370f', stroke: '#eaffd9', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
     }
 
-    // Enemies — sprite based (keep aspect ratio). enemyColOffset shifts them right so
-    // the pre-advance render matches where projectiles actually hit.
+    // Enemies — sprite based (统一 Placement 系统: Ground Point + Bottom-Center Pivot)
     for (const e of visualEnemies) {
-      const ex = fieldX(e.col + enemyColOffset) + e.width * L.board.battlefieldCellWidth / 2;
-      const ey = TOP + e.row * ROW + (e.height * ROW) / 2;
+      const enemyMeta = getEnemyMeta(e.skin ?? '');
+      // 使用统一 Placement 引擎:支持 1x1 和 2x2
+      const placement = placeEnemy(e.row, e.col + enemyColOffset, e.width, e.height, CELL_METRICS, enemyMeta);
       const visual = ENEMY_VISUAL(e);
-      const ew = e.width * L.board.battlefieldCellWidth;
-      const eh = e.height * ROW;
-      const espr = this.addBreathingEntity(ex, ey, visual.frame, ew * 0.82, eh * 0.82, 30, e.width === 2 ? 4 : 3, 750 + e.row * 65, e.id);
-      if (visual.tint) espr.list.filter(child => child instanceof Phaser.GameObjects.Image).forEach(child => (child as Phaser.GameObjects.Image).setTint(visual.tint!));
+      const espr = this.addBreathingEntity(
+        placement.x, placement.y, visual.frame,
+        placement.displayWidth, placement.displayHeight,
+        placement.depth, e.width === 2 ? 4 : 3,
+        750 + e.row * 65, e.id
+      );
+      // 设置 bottom-center pivot
+      const spr = espr.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
+      if (spr) {
+        spr.setOrigin(placement.originX, placement.originY);
+        if (visual.tint) (spr as Phaser.GameObjects.Image).setTint(visual.tint!);
+      }
       espr.setData('enemyId', e.id);
 
-      // HP label
-      const hpLabel = this.add.text(0, eh * 0.28, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0);
+      // HP label (相对 Ground Point 向上偏移)
+      const hpLabelY = placement.groundY - (e.height * ROW) * 0.22;
+      const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
     }
