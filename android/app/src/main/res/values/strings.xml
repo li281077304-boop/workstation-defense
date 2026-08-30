@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">逗呆呆家族大战外星人</string>
-    <string name="title_activity_main">逗呆呆家族大战外星人</string>
+    <string name="app_name">工位保卫战</string>
+    <string name="title_activity_main">工位保卫战</string>
     <string name="package_name">com.local.dfamilyvsaliens</string>
     <string name="custom_url_scheme">com.local.dfamilyvsaliens</string>
 </resources>

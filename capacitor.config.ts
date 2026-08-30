@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.local.dfamilyvsaliens',
-  appName: '逗呆呆家族大战外星人',
+  appName: '工位保卫战',
   webDir: 'dist',
   android: { allowMixedContent: false },
 };
