@@ -186,3 +186,29 @@ export function cumulativeExpectedGeneratedReward(turn: number, spawnChance: num
   for (let t = 1; t <= Math.max(1, turn); t++) acc += expectedRewardPerTurn(t, spawnChance, hardCap, options);
   return acc;
 }
+
+/**
+ * Moyu Economy V2 has no free-floating RewardBall. A standard economy tick is
+ * one carrier opportunity: carrier chance × the stage's weighted drop value.
+ * Keeping this pure avoids the enemy director reading the player's real board.
+ */
+export type MoyuValueStage = { startTurn: number; values: number[]; weights: number[] };
+
+export function moyuStageForTurn(turn: number, stages: readonly MoyuValueStage[]): MoyuValueStage {
+  if (!stages.length) throw new Error('Moyu economy requires at least one value stage');
+  return [...stages].reverse().find(stage => Math.max(1, turn) >= stage.startTurn) ?? stages[0];
+}
+
+export function expectedMoyuValueForTurn(turn: number, carrierChance: number, stages: readonly MoyuValueStage[]): number {
+  const stage = moyuStageForTurn(turn, stages);
+  const weightTotal = stage.weights.reduce((sum, weight) => sum + weight, 0);
+  if (weightTotal <= 0) return 0;
+  const weightedValue = stage.values.reduce((sum, value, index) => sum + value * (stage.weights[index] ?? 0), 0) / weightTotal;
+  return Math.max(0, carrierChance) * weightedValue;
+}
+
+export function cumulativeExpectedMoyuValue(turn: number, carrierChance: number, stages: readonly MoyuValueStage[]): number {
+  let total = 0;
+  for (let t = 1; t <= Math.max(1, turn); t++) total += expectedMoyuValueForTurn(t, carrierChance, stages);
+  return total;
+}

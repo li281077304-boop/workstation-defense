@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { DEFAULT_RULES, BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, REWARD_ECONOMY_VOLUME_PRESETS, maxRewardValueFor, restorePlayableBaselineV1, restoreRewardEconomyTestDefaults, type DifficultyMode, type RewardEconomyTestControls } from './config';
-import { TurnManager, emptyState } from './TurnManager';
-import type { Enemy, Move, RewardBall, TurnEvent } from './types';
+import { TurnManager, emptyState, isTurnManagerRuntimeState, type TurnManagerRuntimeState } from './TurnManager';
+import { clearCurrentRun, loadCurrentRun, saveCurrentRun } from './CurrentRunSave';
+import type { Enemy, Move, MoyuPickup, TurnEvent } from './types';
 import { MOBILE_LAYOUT as L } from '../ui/layout';
-import { PLANT_VALUES } from '../ui/assets';
+import { ART, PLANT_VALUES } from '../ui/assets';
 import { Sfx, ensureAudio } from '../sound';
+import { getAudioManager } from '../audio/AudioManager';
+import { addLocalRecord, loadLocalRecords } from '../records/LocalRecords';
 
 const LEFT = L.board.defenseLeft, TOP = L.board.top, ROW = L.board.rowHeight;
 const defenseX = (col: number) => LEFT + col * L.board.defenseCellWidth;
@@ -15,8 +18,8 @@ const rowAt = (y: number) => Math.floor((y - TOP) / ROW);
 const isTestBuild = () => window.location.port === '5173';
 
 /** A single projectile's animated journey in one lane. */
-type Flight = { lane: number; frame: string; sourcePlantId: string; impacts: { x: number; type: string; value?: number; subjectId?: string; hpAfter?: number }[] };
-type CombatVisualStart = { enemies: Enemy[]; rewardBalls: RewardBall[]; birthSlot: number | null };
+type Flight = { lane: number; frame: string; sourcePlantId: string; impacts: { x: number; type: 'hit' | 'kill' | 'moyu'; value?: number; subjectId?: string; hpAfter?: number }[] };
+type CombatVisualStart = { enemies: Enemy[]; moyuPickups: MoyuPickup[]; birthSlot: number | null; moyuBank: number };
 type RunSummary = { score: number; turn: number; plantPower: number; firepowerUtilization: number; rewardCaptureRate: number; highestPlantValue: number; deathPressureRatio: number; lastTenEnemyCounts: number[] };
 
 /** Map plant value → standalone image key. */
@@ -35,18 +38,20 @@ const ENEMY_VISUAL = (enemy: Pick<Enemy, 'width' | 'skin'>): { frame: string; ti
   return { frame: legal.has(enemy.skin ?? '') ? enemy.skin! : 'enemy-basic-01' };
 };
 
-/** Original lane-colored projectile art. */
-const BULLET_FRAMES = ['projectile-green', 'projectile-blue', 'projectile-orange', 'projectile-purple'];
-const laneBulletFrame = (lane: number) => BULLET_FRAMES[lane % BULLET_FRAMES.length];
+/** Active Moyu Economy V2 projectile art. Values above 4096 share the core art. */
+const PROJECTILE_VALUES = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096] as const;
+const PROJECTILE_VISUAL_SCALE: Record<number, number> = {
+  1: .45, 2: .5, 4: .55, 8: .6, 16: .65, 32: .68, 64: .72,
+  128: .78, 256: .84, 512: .92, 1024: 1, 2048: 1.1, 4096: 1.25,
+};
+const projectileFrame = (damage: number) => `moyu-projectile-${[...PROJECTILE_VALUES].reverse().find(value => damage >= value) ?? 1}`;
+const projectileVisualScale = (damage: number) => PROJECTILE_VISUAL_SCALE[[...PROJECTILE_VALUES].reverse().find(value => damage >= value) ?? 1];
 
 /** Standalone image key → asset path (complete PNGs; placeholder art is fine). */
 const IMAGES: [string, string][] = [
   ...PLANT_VALUES.map<[string, string]>(v => [`plant-${v}`, `assets/plants/plant_${String(v).padStart(3, '0')}.png`]),
-  ...([1, 2, 4, 8] as const).map<[string, string]>(v => [`reward-${v}`, `assets/rewards/reward_${v}.png`]),
-  ['projectile-green', 'assets/projectiles/projectile_green.png'],
-  ['projectile-blue', 'assets/projectiles/projectile_blue.png'],
-  ['projectile-orange', 'assets/projectiles/projectile_orange.png'],
-  ['projectile-purple', 'assets/projectiles/projectile_purple.png'],
+  ['moyu-icon', ART.moyuIcon],
+  ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
   ['enemy-basic-01', 'assets/enemies/enemy_basic_01.png'],
   ['enemy-basic-02', 'assets/enemies/enemy_basic_02.png'],
   ['enemy-basic-03', 'assets/enemies/enemy_basic_03.png'],
@@ -86,12 +91,24 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
    * resolved game state while a captured RewardBall is still travelling.
    */
   private visualBirthSlot: number | null = null;
+  /** Logical collection is immediate; this is only the HUD's animation-safe display value. */
+  private visualMoyuBank = 0;
+  /** A short tap sequence on the full Spawn Slot invokes its deterministic quick deploy. */
+  private lastSpawnSlotTapAt = 0;
+  private spawnSlotTapStart: { x: number; y: number; at: number } | null = null;
   private combatVisualStart: CombatVisualStart | null = null;
   private difficultyPanel: HTMLDivElement | null = null;
   private loadedRewardEconomyTestControls = false;
   private debugPanelHold: Phaser.Time.TimerEvent | null = null;
   private breathingSprites: Array<{ sprite: Phaser.GameObjects.Sprite; baseScale: number; amplitude: number; period: number; phase: number }> = [];
   private runSummaries: RunSummary[] = [];
+  private resumeChoice: Phaser.GameObjects.Container | null = null;
+  private resumeChoiceBounds: { resume: Phaser.Geom.Rectangle; fresh: Phaser.Geom.Rectangle } | null = null;
+  private backgroundSaveHandler: (() => void) | null = null;
+  private scoreTapTimes: number[] = [];
+  private productPanel: HTMLDivElement | null = null;
+  private gameOverRecorded = false;
+  private gameOverRecordMessage = '';
   constructor() { super('game'); }
 
   update() {
@@ -112,15 +129,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
   create() {
     // Fresh manager every scene (re)start — otherwise gameOver state leaks and restart never works.
-    this.manager = new TurnManager(emptyState(), DEFAULT_RULES);
-    this.visualBirthSlot = null;
-    const s = this.manager.state;
-    // Deliberately light opening: two value-1 plants, no birth-slot plant, one distant reward.
-    for (const row of DEFAULT_RULES.startingPlantRows) s.plants[row][0] = { id: `start-${row}`, value: DEFAULT_RULES.startingPlantValue };
-    this.manager.seedOpeningBatch(
-      { id: 'opening-enemy', ...DEFAULT_RULES.openingEnemy, width: 1, height: 1, maxHp: DEFAULT_RULES.openingEnemy.hp },
-      { id: 'opening-reward', ...DEFAULT_RULES.openingReward },
-    );
+    this.startFreshRun();
+    this.productPanel?.remove();
+    this.productPanel = null;
+    this.gameOverRecorded = false;
+    this.gameOverRecordMessage = '';
+    this.lastSpawnSlotTapAt = 0;
+    this.spawnSlotTapStart = null;
     // scene.restart() re-runs create(): clear stale listeners first so they don't pile up (input jank).
     this.debugPanelHold?.remove(false);
     this.debugPanelHold = null;
@@ -132,36 +147,187 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.handlePointerDown(p));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.handlePointerMove(p));
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.handlePointerUp(p));
-    this.input.keyboard?.on('keydown-R', () => this.scene.restart());
+    this.input.keyboard?.on('keydown-R', () => this.restartRun());
     this.input.keyboard?.on('keydown-D', () => this.toggleDifficultyPanel());
     this.createDifficultyPanel();
     this.render();
+    this.installBackgroundSaveHandlers();
+    this.openMainMenu();
+  }
+
+  /** New games always replace any stale current-run record before first save. */
+  private startFreshRun() {
+    this.manager = new TurnManager(emptyState(), DEFAULT_RULES);
+    this.visualBirthSlot = null;
+    this.visualMoyuBank = this.manager.state.moyuBank;
+    const s = this.manager.state;
+    for (const row of DEFAULT_RULES.startingPlantRows) s.plants[row][0] = { id: `start-${row}`, value: DEFAULT_RULES.startingPlantValue };
+    this.manager.seedOpeningBatch(
+      { id: 'opening-enemy', ...DEFAULT_RULES.openingEnemy, width: 1, height: 1, maxHp: DEFAULT_RULES.openingEnemy.hp },
+      { id: 'opening-reward', ...DEFAULT_RULES.openingReward },
+    );
+  }
+
+  /** Save only logic/director state; animation is always reconstructed after loading. */
+  private saveRun() {
+    if (!this.resumeChoice && !this.manager.state.gameOver) saveCurrentRun(this.manager.exportRunSnapshot());
+  }
+
+  private installBackgroundSaveHandlers() {
+    this.backgroundSaveHandler?.();
+    const onBackground = () => this.saveRun();
+    const onVisibility = () => { if (document.visibilityState === 'hidden') onBackground(); };
+    window.addEventListener('pagehide', onBackground);
+    document.addEventListener('visibilitychange', onVisibility);
+    this.backgroundSaveHandler = () => {
+      window.removeEventListener('pagehide', onBackground);
+      document.removeEventListener('visibilitychange', onVisibility);
+      this.backgroundSaveHandler = null;
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.backgroundSaveHandler?.());
+  }
+
+  private showResumeChoice(run: { state: import('./types').GameState; runtime: TurnManagerRuntimeState }) {
+    const layer = this.add.container(0, 0).setDepth(200);
+    const panel = new Phaser.Geom.Rectangle(430, 330, 420, 270);
+    layer.add(this.add.rectangle(640, 540, 1280, 1080, 0x000000, .58));
+    layer.add(this.add.rectangle(panel.centerX, panel.centerY, panel.width, panel.height, 0x14251e, .98).setStrokeStyle(3, 0xb9d36c));
+    layer.add(this.add.text(panel.centerX, 385, '继续上次对局？', { fontSize: '34px', color: '#f6f1ce', fontStyle: 'bold' }).setOrigin(.5));
+    layer.add(this.add.text(panel.centerX, 432, `Turn ${run.state.turn} · 分数 ${run.state.score}`, { fontSize: '20px', color: '#cfe2ca' }).setOrigin(.5));
+    const resume = new Phaser.Geom.Rectangle(468, 495, 165, 64);
+    const fresh = new Phaser.Geom.Rectangle(647, 495, 165, 64);
+    for (const [bounds, label, fill] of [[resume, '继续游戏', 0x4f7d3d], [fresh, '重新开始', 0x60453a]] as const) {
+      layer.add(this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, fill, 1).setOrigin(0).setStrokeStyle(2, 0xe9d997));
+      layer.add(this.add.text(bounds.centerX, bounds.centerY, label, { fontSize: '22px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(.5));
+    }
+    this.resumeChoice = layer;
+    this.resumeChoiceBounds = { resume, fresh };
+    this.resumeChoice.setData('savedRun', run);
+  }
+
+  private handleResumeChoice(x: number, y: number): boolean {
+    if (!this.resumeChoice || !this.resumeChoiceBounds) return false;
+    const { resume, fresh } = this.resumeChoiceBounds;
+    if (Phaser.Geom.Rectangle.Contains(resume, x, y)) {
+      const run = this.resumeChoice.getData('savedRun') as { state: import('./types').GameState; runtime: TurnManagerRuntimeState };
+      this.manager = new TurnManager(emptyState(), DEFAULT_RULES);
+      this.manager.restoreRunSnapshot(run);
+      this.visualBirthSlot = this.manager.state.birthSlot;
+      this.visualMoyuBank = this.manager.state.moyuBank;
+      this.resumeChoice.destroy(); this.resumeChoice = null; this.resumeChoiceBounds = null;
+      this.render();
+      return true;
+    }
+    if (Phaser.Geom.Rectangle.Contains(fresh, x, y)) { this.restartRun(); return true; }
+    return true;
+  }
+
+  private restartRun() { clearCurrentRun(); this.scene.restart(); }
+
+  private closeProductPanel() { this.productPanel?.remove(); this.productPanel = null; }
+
+  /** Shared lightweight HTML modal for pause, settings, records, and results. */
+  private openProductPanel(title: string, body: string, actions: Array<{ label: string; primary?: boolean; run: () => void }>) {
+    this.closeProductPanel();
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;z-index:2147483646;inset:0;display:flex;align-items:center;justify-content:center;background:#07100bb8;padding:20px;pointer-events:auto';
+    const card = document.createElement('div');
+    card.style.cssText = 'width:min(440px,92vw);max-height:88dvh;overflow:auto;background:#16251f;color:#f7f1d0;border:2px solid #d8b969;border-radius:14px;padding:24px;font:18px system-ui;box-shadow:0 12px 40px #000';
+    card.innerHTML = `<h2 style="margin:0 0 14px;text-align:center">${title}</h2><div style="line-height:1.55;text-align:center">${body}</div>`;
+    const buttons = document.createElement('div');
+    buttons.style.cssText = 'display:grid;gap:10px;margin-top:20px';
+    for (const action of actions) {
+      const button = document.createElement('button');
+      button.textContent = action.label;
+      button.style.cssText = `min-height:52px;border-radius:10px;border:1px solid #e9d997;background:${action.primary ? '#4f7d3d' : '#31453a'};color:#fff;font:700 18px system-ui`;
+      button.onclick = () => { getAudioManager().playSfx('uiClick'); action.run(); };
+      buttons.append(button);
+    }
+    card.append(buttons); panel.append(card); document.body.append(panel); this.productPanel = panel;
+  }
+
+  private openSettingsPanel(returnTo?: () => void) {
+    const settings = getAudioManager().getSettings();
+    const row = (label: string, enabled: boolean, toggle: () => void) => ({ label: `${label}：${enabled ? '开' : '关'}`, primary: enabled, run: () => { toggle(); this.openSettingsPanel(returnTo); } });
+    this.openProductPanel('设置', '修改立即生效，并保存在本机。', [
+      row('音乐', settings.musicEnabled, () => getAudioManager().setMusicEnabled(!settings.musicEnabled)),
+      row('音效', settings.sfxEnabled, () => getAudioManager().setSfxEnabled(!settings.sfxEnabled)),
+      row('震动', settings.vibrationEnabled, () => getAudioManager().setVibrationEnabled(!settings.vibrationEnabled)),
+      row('伤害数字', settings.damageNumbersEnabled, () => getAudioManager().setDamageNumbersEnabled(!settings.damageNumbersEnabled)),
+      { label: '返回', run: () => { this.closeProductPanel(); returnTo?.(); } },
+    ]);
+  }
+
+  private openRecordsPanel(returnTo?: () => void) {
+    const records = loadLocalRecords();
+    const body = records.length ? records.map((record, index) => `<div style="padding:6px 0;border-bottom:1px solid #ffffff22"><b>${index === 0 ? 'BEST ' : '#'}${index + 1}</b>　${record.score}<br><small>${record.turns} Turn · 最高单位 ${record.highestDefenderValue}</small></div>`).join('') : '还没有历史战绩。';
+    this.openProductPanel('我的战绩', body, [{ label: '返回', run: () => { this.closeProductPanel(); returnTo?.(); } }]);
+  }
+
+  private openPausePanel() {
+    if (this.animating || this.manager.state.gameOver) return;
+    this.openProductPanel('暂停', '对局已暂停。', [
+      { label: '继续游戏', primary: true, run: () => this.closeProductPanel() },
+      { label: '设置', run: () => this.openSettingsPanel(() => this.openPausePanel()) },
+      { label: '重新开始', run: () => this.openProductPanel('确认重新开始？', '当前对局将被放弃。', [{ label: '确认重新开始', primary: true, run: () => this.restartRun() }, { label: '取消', run: () => this.openPausePanel() }]) },
+      { label: '返回主菜单', run: () => { this.saveRun(); this.openMainMenu(); } },
+    ]);
+  }
+
+  private openMainMenu() {
+    const saved = loadCurrentRun<TurnManagerRuntimeState>();
+    const actions: Array<{ label: string; primary?: boolean; run: () => void }> = [];
+    if (saved && isTurnManagerRuntimeState(saved.run.runtime)) actions.push({ label: '继续游戏', primary: true, run: () => { this.manager = new TurnManager(emptyState(), DEFAULT_RULES); this.manager.restoreRunSnapshot(saved.run); this.visualBirthSlot = this.manager.state.birthSlot; this.visualMoyuBank = this.manager.state.moyuBank; this.closeProductPanel(); this.render(); } });
+    actions.push({ label: '开始游戏', primary: !saved, run: () => { clearCurrentRun(); this.startFreshRun(); this.closeProductPanel(); this.render(); this.saveRun(); } });
+    actions.push({ label: '我的战绩', run: () => this.openRecordsPanel(() => this.openMainMenu()) });
+    actions.push({ label: '设置', run: () => this.openSettingsPanel(() => this.openMainMenu()) });
+    this.openProductPanel('工位保卫战', 'BEST ' + (loadLocalRecords()[0]?.score ?? 0), actions);
+  }
+
+  private openGameOverPanel() {
+    const s = this.manager.state;
+    this.openProductPanel('本局结束', `${this.gameOverRecordMessage ? `<b>${this.gameOverRecordMessage}</b><br>` : ''}得分 ${s.score}<br>Turn ${s.turn}<br>最高单位 ${s.highestDefenderValue}<br>获得摸鱼值 ${s.totalMoyuEarned}<br>提取摸鱼值 ${s.totalMoyuExtracted}<br>溢出摸鱼值 ${s.totalMoyuOverflow}`, [
+      { label: '再来一局', primary: true, run: () => this.restartRun() },
+      { label: '我的战绩', run: () => this.openRecordsPanel(() => this.openGameOverPanel()) },
+      { label: '返回主菜单', run: () => this.openMainMenu() },
+    ]);
   }
 
   /** Test-build mobile entry: hold the score area for 1.2 seconds. */
   private handlePointerDown(pointer: Phaser.Input.Pointer) {
-    // The visible gear is the permanent APK entry for player-facing difficulty
-    // tuning. Handle it before drag logic so it cannot be mistaken for a board
-    // interaction.
+    if (this.productPanel) return;
+    if (this.handleResumeChoice(pointer.x, pointer.y)) return;
+    if (this.handleMoyuUiPointer(pointer.x, pointer.y)) return;
+    // The visible gear is a player-facing pause/settings entry. Debug remains
+    // available only through the hidden score gesture below.
     if (pointer.x >= L.header.settingsX - 110 && pointer.y <= 130) {
       this.cancelDrag();
-      this.toggleDifficultyPanel();
+      this.openPausePanel();
       return;
     }
-    // Mobile test entry: the score lives at the horizontal centre of the
-    // 1280px canvas (x≈640). Keep the hit area generous after FIT scaling.
-    if (isTestBuild() && pointer.x >= 480 && pointer.x <= 800 && pointer.y <= 130) {
-      this.debugPanelHold = this.time.delayedCall(1200, () => {
-        this.debugPanelHold = null;
+    if (pointer.x >= 760 && pointer.x <= 1160 && pointer.y <= 130) {
+      const now = this.time.now;
+      this.scoreTapTimes = [...this.scoreTapTimes.filter(t => now - t <= 1500), now];
+      if (this.scoreTapTimes.length >= 3) {
+        this.scoreTapTimes = [];
         this.cancelDrag();
         this.toggleDifficultyPanel();
-      });
+        return;
+      }
+    }
+    if (this.isInSpawnSlot(pointer.x, pointer.y) && this.manager.state.birthSlot !== null && !this.animating && !this.manager.state.gameOver) {
+      this.spawnSlotTapStart = { x: pointer.x, y: pointer.y, at: this.time.now };
+    } else {
+      this.spawnSlotTapStart = null;
     }
     this.beginDrag(pointer.x, pointer.y);
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer) {
-    if (this.isDifficultyPanelOpen()) return;
+    if (this.productPanel || this.isDifficultyPanelOpen()) return;
+    if (this.spawnSlotTapStart && Math.hypot(pointer.x - this.spawnSlotTapStart.x, pointer.y - this.spawnSlotTapStart.y) > 24) {
+      this.spawnSlotTapStart = null;
+    }
     if (this.debugPanelHold && Math.hypot(pointer.x - pointer.downX, pointer.y - pointer.downY) > 30) {
       this.debugPanelHold.remove(false);
       this.debugPanelHold = null;
@@ -170,17 +336,122 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   }
 
   private handlePointerUp(pointer: Phaser.Input.Pointer) {
-    if (this.isDifficultyPanelOpen()) return;
+    if (this.productPanel || this.isDifficultyPanelOpen()) return;
     this.debugPanelHold?.remove(false);
     this.debugPanelHold = null;
+    if (this.isSpawnSlotQuickTap(pointer)) {
+      this.cancelDrag();
+      const now = this.time.now;
+      if (now - this.lastSpawnSlotTapAt <= 340) {
+        this.lastSpawnSlotTapAt = 0;
+        this.quickDeployFromBirthSlot();
+      } else {
+        this.lastSpawnSlotTapAt = now;
+      }
+      this.spawnSlotTapStart = null;
+      return;
+    }
+    this.spawnSlotTapStart = null;
     this.endDrag(pointer.x, pointer.y);
+  }
+
+  /**
+   * One bank press extracts the largest legal power of two. It remains a
+   * UI-only operation: no Turn is started and all authority stays in the core.
+   */
+  private handleMoyuUiPointer(x: number, y: number) {
+    const bank = this.moyuBankBounds();
+    if (Phaser.Geom.Rectangle.Contains(bank, x, y)) {
+      if (!this.animating && !this.manager.state.gameOver && this.manager.state.birthSlot === null) {
+        const before = this.manager.state.moyuBank;
+        if (this.manager.extractHighestMoyu()) {
+          const extracted = before - this.manager.state.moyuBank;
+          this.visualMoyuBank = this.manager.state.moyuBank;
+          this.visualBirthSlot = this.manager.state.birthSlot;
+          this.saveRun();
+          getAudioManager().playSfx('moyuExtract');
+          this.cancelDrag();
+          this.render();
+          const slot = this.getSpawnSlotCenter();
+          this.floatText(slot.x, slot.y - 112, `提取 ${extracted}`, '#d8ff9f');
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private isSpawnSlotQuickTap(pointer: Phaser.Input.Pointer) {
+    const tap = this.spawnSlotTapStart;
+    return !!tap
+      && this.isInSpawnSlot(pointer.x, pointer.y)
+      && this.manager.state.birthSlot !== null
+      && !this.animating
+      && !this.manager.state.gameOver
+      && this.time.now - tap.at <= 420
+      && Math.hypot(pointer.x - tap.x, pointer.y - tap.y) <= 24;
+  }
+
+  /** Return the fixed, documented target priority before core mutates state. */
+  private nextQuickDeployTarget() {
+    for (const col of [1, 0]) {
+      for (let row = 0; row < BOARD.rows; row++) {
+        if (!this.manager.state.plants[row][col]) return { row, col };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The core is responsible for applying the exact regular deploy Turn. This
+   * scene method only derives the visual target and reuses the manual pipeline.
+   */
+  private quickDeployFromBirthSlot() {
+    if (this.animating || this.manager.state.gameOver || this.manager.state.birthSlot === null) return;
+    const target = this.nextQuickDeployTarget();
+    if (!target) {
+      this.playQuickDeployFailureFeedback();
+      return;
+    }
+    const before = structuredClone(this.manager.state);
+    if (!this.manager.quickDeployFromBirth()) {
+      this.playQuickDeployFailureFeedback();
+      return;
+    }
+    if (this.manager.state.gameOver) clearCurrentRun();
+    this.birthSlotBefore = null;
+    this.visualBirthSlot = null;
+    this.combatVisualStart = {
+      enemies: before.enemies,
+      moyuPickups: before.moyuPickups,
+      birthSlot: null,
+      moyuBank: before.moyuBank,
+    };
+    this.lastPlacement = { to: target, merged: false };
+    this.animateTurn();
+  }
+
+  /** Full-board rejection is deliberately visible but never mutates game state. */
+  private playQuickDeployFailureFeedback() {
+    const slot = this.getSpawnSlotCenter();
+    const flash = this.add.rectangle(slot.x, slot.y, L.spawnSlot.width - 18, L.spawnSlot.height - 18, 0xb7443e, 0.28).setDepth(70);
+    this.tweens.add({
+      targets: flash,
+      x: slot.x + 12,
+      alpha: 0,
+      duration: 70,
+      yoyo: true,
+      repeat: 2,
+      onComplete: () => flash.destroy(),
+    });
+    this.floatText(slot.x, slot.y - 112, '防守区已满', '#ffb2a1');
   }
 
   private beginDrag(x: number, y: number) {
     ensureAudio(); // browsers only allow audio after a user gesture
     if (this.isDifficultyPanelOpen()) return;
     if (this.animating) return;
-    if (this.manager.state.gameOver) { this.scene.restart(); return; }
+    if (this.manager.state.gameOver) return;
     const birth = this.isInSpawnSlot(x, y);
     const col = defenseColAt(x), row = rowAt(y);
     if (birth && this.manager.state.birthSlot !== null) {
@@ -268,14 +539,16 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const accepted = this.manager.perform({ from, to } as Move);
     this.cancelDrag();
     if (!accepted) { this.render(); return; }
+    if (this.manager.state.gameOver) clearCurrentRun();
     this.birthSlotBefore = from === 'birth' ? null : before.birthSlot;
     // A plant taken from the slot vanishes immediately; otherwise keep the
     // pre-combat value visible until a captured ball has actually arrived.
     this.visualBirthSlot = from === 'birth' ? null : before.birthSlot;
     this.combatVisualStart = {
       enemies: before.enemies,
-      rewardBalls: before.rewardBalls,
+      moyuPickups: before.moyuPickups,
       birthSlot: from === 'birth' ? null : before.birthSlot,
+      moyuBank: before.moyuBank,
     };
     this.lastPlacement = { to, merged };
     this.animateTurn();
@@ -298,31 +571,21 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // are intentionally absent from this snapshot until the Spawn Phase.
     this.render(0, this.combatVisualStart ?? undefined);
     this.playPlacementAnimation();
-    // 2) Every plant begins its volley together; a single plant keeps its
-    // original readable cadence between its own multiple shots.
+    // 2) Moyu Economy V2: exactly one projectile per defender, and every
+    // defender begins that one shot at the same moment.
     const events = this.manager.state.events.slice();
     const gameOver = this.manager.state.gameOver;
     const flights = this.buildFlights(events);
     const advancedIds = events.filter(e => e.type === 'advance').map(e => e.subjectId!).filter(Boolean);
-    const advancedRewardIds = events.filter(e => e.type === 'reward-advance').map(e => e.subjectId!).filter(Boolean);
+    const advancedMoyuIds = events.filter(e => e.type === 'moyu-advance').map(e => e.subjectId!).filter(Boolean);
     const fireAfter = this.lastPlacement ? 170 : 0;
     this.time.delayedCall(fireAfter, () => {
       if (flights.length) Sfx.volley();
-      if (!flights.length) { this.finishTurn(gameOver, advancedIds, advancedRewardIds, events); return; }
-      const flightsByPlant = new Map<string, Flight[]>();
-      for (const flight of flights) {
-        const volley = flightsByPlant.get(flight.sourcePlantId) ?? [];
-        volley.push(flight);
-        flightsByPlant.set(flight.sourcePlantId, volley);
-      }
+      if (!flights.length) { this.finishTurn(gameOver, advancedIds, advancedMoyuIds, events); return; }
       let remaining = flights.length;
-      for (const volley of flightsByPlant.values()) {
-        volley.forEach((flight, index) => {
-          const launch = () => this.animateOneFlight(flight, () => { if (--remaining === 0) this.finishTurn(gameOver, advancedIds, advancedRewardIds, events); });
-          if (index === 0) launch();
-          else this.time.delayedCall(index * 70, launch);
-        });
-      }
+      for (const flight of flights) this.animateOneFlight(flight, () => {
+        if (--remaining === 0) this.finishTurn(gameOver, advancedIds, advancedMoyuIds, events);
+      });
     });
   }
 
@@ -354,9 +617,9 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     }
   }
 
-  private finishTurn(gameOver: boolean, advancedIds: string[], advancedRewardIds: string[], events: TurnEvent[]) {
+  private finishTurn(gameOver: boolean, advancedIds: string[], advancedMoyuIds: string[], events: TurnEvent[]) {
     // 3) All old survivors advance together before any new spawn becomes visible.
-    this.slideBattlefieldEntities(advancedIds, advancedRewardIds, () => this.showSpawnPhase(gameOver, events));
+    this.slideBattlefieldEntities(advancedIds, advancedMoyuIds, () => this.animateAutoRecoveredMoyu(events, () => this.showSpawnPhase(gameOver, events)));
   }
 
   /** Scale-bounce the birth slot sprite when its value changed this turn (refilled or upgraded). */
@@ -373,13 +636,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   }
 
   /** Tween every old battlefield entity one cell left, then enter Spawn Phase. */
-  private slideBattlefieldEntities(advancedIds: string[], advancedRewardIds: string[], done: () => void) {
+  private slideBattlefieldEntities(advancedIds: string[], advancedMoyuIds: string[], done: () => void) {
     const advancing = new Set(advancedIds);
     const cellW = L.board.battlefieldCellWidth;
     const movers = this.manager.state.enemies.filter(enemy => advancing.has(enemy.id));
-    const rewardMovers = advancedRewardIds.map(id => this.findEntity('rewardId', id)).filter((entity): entity is Phaser.GameObjects.Container => !!entity);
-    if (!movers.length && !rewardMovers.length) { done(); return; }
-    let remaining = movers.length + rewardMovers.length;
+    const moyuMovers = advancedMoyuIds.map(id => this.findEntity('moyuPickupId', id)).filter((entity): entity is Phaser.GameObjects.Container => !!entity);
+    if (!movers.length && !moyuMovers.length) { done(); return; }
+    let remaining = movers.length + moyuMovers.length;
     for (const enemy of movers) {
       if (!advancing.has(enemy.id)) continue;
       const curX = fieldX(enemy.col) + enemy.width * cellW / 2;
@@ -390,18 +653,38 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       // The pre-combat snapshot is already at prevX; never snap it right again.
       this.tweens.add({ targets: spr, x: curX, duration: 200, ease: 'Sine.easeOut', onComplete: () => { if (--remaining === 0) done(); } });
     }
-    for (const reward of rewardMovers) {
-      this.tweens.add({ targets: reward, x: reward.x - cellW, duration: 200, ease: 'Sine.easeOut', onComplete: () => { if (--remaining === 0) done(); } });
+    for (const pickup of moyuMovers) {
+      this.tweens.add({ targets: pickup, x: pickup.x - cellW, duration: 200, ease: 'Sine.easeOut', onComplete: () => { if (--remaining === 0) done(); } });
+    }
+  }
+
+  /**
+   * A pickup that reaches the recovery edge is never allowed to vanish. Core
+   * has already credited the Bank; this sequence only makes that recovery
+   * visible and advances the HUD exactly once per event.
+   */
+  private animateAutoRecoveredMoyu(events: TurnEvent[], done: () => void) {
+    const recovered = events.filter(event => event.type === 'moyu-auto-recovered' && event.subjectId);
+    if (!recovered.length) { done(); return; }
+    let remaining = recovered.length;
+    for (const event of recovered) {
+      const value = event.value ?? 0;
+      const pickup = this.findEntity('moyuPickupId', event.subjectId!) ?? this.createMoyuFlightProxy(
+        L.board.battlefieldLeft - L.board.battlefieldCellWidth / 2,
+        TOP + (event.lane ?? 2) * ROW + ROW / 2,
+        value,
+      );
+      this.flyMoyuToBank(pickup, value, () => { if (--remaining === 0) done(); });
     }
   }
 
   private showSpawnPhase(gameOver: boolean, events: TurnEvent[]) {
-    const spawned = new Set(events.filter(event => event.type === 'enemy-spawned' || event.type === 'reward-spawned').map(event => event.subjectId).filter(Boolean));
+    const spawned = new Set(events.filter(event => event.type === 'enemy-spawned' || event.type === 'moyu-spawned').map(event => event.subjectId).filter(Boolean));
     // Do not let the resolved logical birthSlot leak into the screen here.
     // Any captured reward has already completed its flight before this phase.
     this.render();
     this.combatVisualStart = null;
-    const entities = this.children.list.filter((child): child is Phaser.GameObjects.Container => child instanceof Phaser.GameObjects.Container && (spawned.has(child.getData('enemyId')) || spawned.has(child.getData('rewardId'))));
+    const entities = this.children.list.filter((child): child is Phaser.GameObjects.Container => child instanceof Phaser.GameObjects.Container && (spawned.has(child.getData('enemyId')) || spawned.has(child.getData('moyuPickupId'))));
     if (!entities.length) { this.completeTurn(gameOver); return; }
     for (const entity of entities) entity.setAlpha(0).setScale(0.86);
     this.tweens.add({ targets: entities, alpha: 1, scale: 1, duration: 130, ease: 'Sine.easeOut', onComplete: () => this.completeTurn(gameOver) });
@@ -411,9 +694,17 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // This is the first safe synchronization point: every projectile, reward
     // flight, enemy move, and spawn animation has completed.
     this.visualBirthSlot = this.manager.state.birthSlot;
+    // Reconcile after every visual flight has completed. The renderer only ever
+    // increments this value once per pickup animation, never from animation
+    // completion callbacks.
+    this.visualMoyuBank = this.manager.state.moyuBank;
     this.animating = false;
     this.popBirthSlotIfRefreshed();
-    if (gameOver) { this.captureRunSummary(); Sfx.gameOver(); this.cameras.main.flash(160, 255, 120, 120); }
+    if (gameOver) {
+      clearCurrentRun(); this.captureRunSummary(); Sfx.gameOver(); this.cameras.main.flash(160, 255, 120, 120);
+      this.recordCompletedRun(); this.openGameOverPanel();
+    }
+    else this.saveRun();
   }
 
   private captureRunSummary() {
@@ -438,6 +729,15 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.refreshDifficultyPanel();
   }
 
+  private recordCompletedRun() {
+    if (this.gameOverRecorded) return;
+    this.gameOverRecorded = true;
+    const s = this.manager.state;
+    const result = addLocalRecord({ score: s.score, turns: s.turn, highestDefenderValue: s.highestDefenderValue, totalMoyuEarned: s.totalMoyuEarned, totalMoyuExtracted: s.totalMoyuExtracted, totalMoyuOverflow: s.totalMoyuOverflow, timestamp: Date.now() });
+    this.gameOverRecordMessage = result.isNewBest ? '新纪录！' : result.enteredTop10 ? '进入历史前10' : '';
+    if (result.isNewBest) getAudioManager().playSfx('newRecord');
+  }
+
   /** Group events into one flight per fired projectile. */
   private buildFlights(events: TurnEvent[]): Flight[] {
     const flights: Flight[] = [];
@@ -445,10 +745,24 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     for (const e of events) {
       if (e.type === 'shot') {
         if (current) flights.push(current);
-        current = { lane: e.lane ?? 0, frame: laneBulletFrame(e.lane ?? 0), sourcePlantId: e.sourcePlantId ?? `legacy-lane-${e.lane ?? 0}`, impacts: [] };
-      } else if (current && (e.type === 'hit' || e.type === 'reward-captured' || e.type === 'kill')) {
+        // Core records damage on the shot event. In V2 it is the whole defender
+        // value because every defender produces exactly one projectile.
+        current = { lane: e.lane ?? 0, frame: projectileFrame(e.damage ?? 1), sourcePlantId: e.sourcePlantId ?? `lane-${e.lane ?? 0}`, impacts: [] };
+      } else if (current && e.type === 'hit') {
         const col = e.col ?? BOARD.battlefieldCols - 1;
-        current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: e.type === 'reward-captured' ? 'capture' : e.type, value: e.value, subjectId: e.subjectId, hpAfter: e.hpAfter });
+        current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: 'hit', value: e.value, subjectId: e.subjectId, hpAfter: e.hpAfter });
+      } else if (current && e.type === 'kill') {
+        // A kill has a preceding hit in the logical event stream. Replace that
+        // visual impact instead of playing a hit and a death on the same body.
+        const prior = [...current.impacts].reverse().find(impact => impact.subjectId === e.subjectId);
+        if (prior) prior.type = 'kill';
+        else {
+          const col = e.col ?? BOARD.battlefieldCols - 1;
+          current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: 'kill', value: e.value, subjectId: e.subjectId });
+        }
+      } else if (current && e.type === 'moyu-collected') {
+        const col = e.col ?? BOARD.battlefieldCols - 1;
+        current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: 'moyu', value: e.value, subjectId: e.subjectId });
       }
     }
     if (current) flights.push(current);
@@ -460,7 +774,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const startX = L.board.battlefieldLeft - 20;
     const y = TOP + f.lane * ROW + ROW / 2;
     const bullet = this.add.sprite(startX, y, f.frame).setDepth(50);
-    bullet.setDisplaySize(60, 24);
+    const scale = projectileVisualScale(Number(f.frame.split('-').at(-1)) || 1);
+    fitSprite(bullet, 76 + scale * 66, 18 + scale * 38);
 
     const rightEdge = fieldX(BOARD.battlefieldCols - 1) + L.board.battlefieldCellWidth;
     if (!f.impacts.length) {
@@ -475,7 +790,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       this.tweens.add({
         targets: bullet, x: imp.x,
         duration: Math.max(130, dist * 0.55), ease: 'Linear',
-        onComplete: () => this.playImpact(imp, y, bullet, imp.type === 'capture' ? done : step)
+        onComplete: () => this.playImpact(imp, y, bullet, imp.type === 'moyu' ? done : step)
       });
     };
     step();
@@ -488,20 +803,21 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   /** Replay one already-calculated impact without exposing final combat state early. */
   private playImpact(imp: Flight['impacts'][number], y: number, bullet: Phaser.GameObjects.Sprite, done: () => void) {
     const { x, type, value, subjectId, hpAfter } = imp;
-    if (type === 'capture') {
-      // Reward captured: golden merge burst + "+N" popup
+    if (type === 'moyu') {
+      // A Moyu Pickup consumes this projectile no matter how much damage it
+      // still has. Core already added its value to the Bank; this is strictly
+      // a presentation hand-off, never a second economic mutation.
       Sfx.capture();
       const fx = this.add.sprite(x, y, 'effect-merge').setDepth(60);
       fx.setDisplaySize(110, 110);
       this.tweens.add({ targets: fx, scale: 1.7, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => fx.destroy() });
-      if (value) this.floatText(x, y - 16, `+${value}`, '#ffd24d');
+      if (value) this.floatText(x, y - 16, `+${value} 摸鱼`, '#9dff6e');
       bullet.destroy();
-      const reward = subjectId ? this.findEntity('rewardId', subjectId) : undefined;
-      // A missing container must not make the reward appear immediately.
-      // Recreate a small visual proxy at the true hit point and give it the
-      // same complete flight to the slot.
-      const flyingReward = reward ?? this.createRewardFlightProxy(x, y, value ?? 1);
-      this.flyRewardToBirthSlot(flyingReward, value ?? 1, done);
+      const pickup = subjectId ? this.findEntity('moyuPickupId', subjectId) : undefined;
+      // A missing container must not make the value seem lost. Recreate a
+      // proxy at the collision point and send that visual to the Bank.
+      const flyingPickup = pickup ?? this.createMoyuFlightProxy(x, y, value ?? 1);
+      this.flyMoyuToBank(flyingPickup, value ?? 1, done);
       return;
     }
     if (type === 'kill') {
@@ -539,7 +855,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     return container;
   }
 
-  private findEntity(key: 'enemyId' | 'rewardId', id: string) {
+  private findEntity(key: 'enemyId' | 'rewardId' | 'moyuPickupId', id: string) {
     return this.children.list.find((c): c is Phaser.GameObjects.Container => c instanceof Phaser.GameObjects.Container && c.getData(key) === id);
   }
 
@@ -566,28 +882,40 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.tweens.add({ targets: entity, scale: base, duration: 220, ease: 'Back.easeOut' });
   }
 
-  /** Fallback visual used only if a reward container was rebuilt unexpectedly. */
-  private createRewardFlightProxy(x: number, y: number, value: number) {
+  /** Fallback visual used only if a pickup container was rebuilt unexpectedly. */
+  private createMoyuFlightProxy(x: number, y: number, value: number) {
     const proxy = this.add.container(x, y).setDepth(55);
-    const sprite = this.add.sprite(0, 0, `reward-${Math.min(value, 8)}`);
+    const sprite = this.add.sprite(0, 0, 'moyu-icon');
     fitSprite(sprite, 56, 56);
     proxy.add(sprite);
-    proxy.add(this.add.text(0, 0, String(value), { fontSize: '18px', color: '#51380a', fontStyle: 'bold' }).setOrigin(.5));
+    proxy.add(this.add.text(0, 0, String(value), { fontSize: '18px', color: '#17370f', stroke: '#eaffd9', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
     return proxy;
   }
 
-  /** Update the visible slot only after the captured ball reaches it. */
-  private flyRewardToBirthSlot(reward: Phaser.GameObjects.Container, value: number, done: () => void) {
-    const slot = this.getSpawnSlotCenter();
-    const base = reward.scale;
-    this.tweens.add({ targets: reward, scale: base * 1.12, duration: 80, ease: 'Sine.easeOut', onComplete: () => {
-      this.tweens.add({ targets: reward, x: slot.x, y: slot.y, scale: base * 0.65, alpha: 0.3, duration: 290, ease: 'Sine.easeInOut', onComplete: () => {
-        reward.destroy();
-        this.visualBirthSlot = this.visualBirthSlot === null ? value : Math.max(this.visualBirthSlot, value);
-        this.updateBirthSlotVisual(this.visualBirthSlot);
+  /** Fly a collected pickup to the Bank. The visual update is additive once. */
+  private flyMoyuToBank(pickup: Phaser.GameObjects.Container, value: number, done: () => void) {
+    const bank = this.moyuBankBounds();
+    const target = { x: bank.x + 42, y: bank.y + bank.height / 2 };
+    const base = pickup.scale;
+    // Core has already clamped this credit to capacity. Never let a flying
+    // pickup make the UI claim more currency than the saved logic state owns.
+    this.visualMoyuBank = Math.min(this.manager.moyuCapacity(), this.visualMoyuBank + value);
+    this.updateMoyuBankHud();
+    this.tweens.add({ targets: pickup, scale: base * 1.16, duration: 70, ease: 'Sine.easeOut', onComplete: () => {
+      this.tweens.add({ targets: pickup, x: target.x, y: target.y, scale: base * .55, alpha: .15, duration: 280, ease: 'Sine.easeInOut', onComplete: () => {
+        pickup.destroy();
         done();
       } });
     } });
+  }
+
+  private moyuBankBounds() { return new Phaser.Geom.Rectangle(34, 26, 250, 76); }
+
+  /** Update only HUD text; no gameplay value is ever mutated here. */
+  private updateMoyuBankHud() {
+    const hud = this.children.list.find((child): child is Phaser.GameObjects.Container => child instanceof Phaser.GameObjects.Container && child.getData('moyuBankHud') === true);
+    const capacity = this.manager.moyuCapacity();
+    (hud?.getData('moyuBankLabel') as Phaser.GameObjects.Text | undefined)?.setText(`${this.visualMoyuBank} / ${capacity}`);
   }
 
   /** Single source of truth for every Spawn Slot visual and animation target. */
@@ -599,6 +927,25 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private isInSpawnSlot(x: number, y: number) {
     const slot = L.spawnSlot;
     return x >= slot.left && x <= slot.left + slot.width && y >= slot.centerY - slot.height / 2 && y <= slot.centerY + slot.height / 2;
+  }
+
+  /** Visible player resource bank. One tap extracts the largest affordable unit. */
+  private renderMoyuBankHud(value: number) {
+    const bounds = this.moyuBankBounds();
+    const bank = this.add.container(0, 0).setDepth(40);
+    bank.setData('moyuBankHud', true);
+    const capacity = this.manager.moyuCapacity();
+    const full = value >= capacity;
+    const ready = !this.animating && !this.manager.state.gameOver && this.manager.state.birthSlot === null && value >= 1;
+    bank.add(this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, full ? 0x5b4721 : ready ? 0x284a31 : 0x193b2b, .96).setOrigin(0).setStrokeStyle(3, full ? 0xffcf5d : ready ? 0xb7e46f : 0x86c75d, 1));
+    const icon = this.add.sprite(bounds.x + 40, bounds.y + bounds.height / 2, 'moyu-icon');
+    fitSprite(icon, 48, 48);
+    bank.add(icon);
+    bank.add(this.add.text(bounds.x + 78, bounds.y + 13, '摸鱼账户', { fontSize: '18px', color: '#d8ffb6', fontStyle: 'bold' }));
+    const label = this.add.text(bounds.x + 78, bounds.y + 36, `${value} / ${capacity}`, { fontSize: '27px', color: '#ffffff', stroke: '#17370f', strokeThickness: 5, fontStyle: 'bold' });
+    bank.add(label);
+    bank.setData('moyuBankLabel', label);
+    bank.add(this.add.text(bounds.right - 13, bounds.y + bounds.height / 2, full ? 'FULL' : '提取', { fontSize: '16px', color: full ? '#ffea9b' : ready ? '#eaffbd' : '#98aa92', fontStyle: 'bold' }).setOrigin(1, .5));
   }
 
   /** Player-facing live difficulty settings, opened from the visible gear. */
@@ -655,11 +1002,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
         const v2Knobs: Array<[keyof RewardEconomyTestControls, string, number, number, number]> = [
           ['enemyVolumeMultiplier', 'Enemy Volume', 0.4, 1.5, 0.1],
           ['enemyHpMultiplier', 'Enemy HP', 0.5, 1.5, 0.1],
-          ['rewardRateMultiplier', 'Reward Rate', 0.5, 1.5, 0.1],
+          ['rewardRateMultiplier', 'Moyu Carrier Rate', 0.5, 1.5, 0.1],
           ['largeEnemyRateMultiplier', 'Large Enemy Rate', 0, 1.5, 0.1],
-          ['baselineCaptureRate', '标准奖励获取率', 0.20, 0.70, 0.05],
-          ['rewardProgression', '高级球增长速度', 0.5, 2.0, 0.1],
-          ['highValueBias', '高级球倾向', 0.30, 1.00, 0.05],
+          ['baselineCaptureRate', '标准摸鱼回收率', 0.20, 0.70, 0.05],
+          ['rewardProgression', 'Moyu Value Growth', 0.5, 2.0, 0.1],
+          ['highValueBias', 'Moyu High Value Bias', 0.30, 1.00, 0.05],
         ];
         const stepButton = (key: keyof RewardEconomyTestControls, delta: number) => `<button data-v2-step="${key}" data-delta="${delta}" style="width:44px;height:44px;font-size:22px">${delta < 0 ? '−' : '+'}</button>`;
         const number = (value: number) => value.toFixed(1);
@@ -800,9 +1147,9 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private refreshDifficultyPanel() {
     const stats = this.difficultyPanel?.querySelector<HTMLElement>('[data-stats]');
     if (!stats) return;
-    const highest = Math.max(1, ...this.manager.state.plants.flatMap(row => row.filter((plant): plant is NonNullable<typeof plant> => plant !== null).map(plant => plant.value)));
+    const highest = this.manager.state.highestDefenderValue;
     const recent = this.manager.state.metrics.slice(-10);
-    const total = (key: 'theoreticalDamage' | 'effectiveEnemyDamage' | 'rewardSpawnValue' | 'rewardCapturedValue') => recent.reduce((sum, metric) => sum + metric[key], 0);
+    const total = (key: 'theoreticalDamage' | 'effectiveEnemyDamage' | 'moyuCollectedValue' | 'autoRecoveredMoyuValue' | 'moyuInterceptWaste') => recent.reduce((sum, metric) => sum + metric[key], 0);
     const theoretical = total('theoreticalDamage'), effective = total('effectiveEnemyDamage');
     const last = recent.at(-1);
     const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -818,12 +1165,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     if (ACTIVE_DIFFICULTY.mode === 'reward-economy') {
       const d = this.manager.rewardEconomyDiagnostics();
       const lanes = this.manager.laneDistributionDiagnostics();
-      economy = `<br><strong>经济链（V2）</strong><br>实际 PlantPower：${last?.plantPower ?? 0}<br>Expected PlantPower：${d.expectedPlantPower}（Baseline ${percent(d.baselineCaptureRate)}）<br>当前允许奖励：${[1, 2, 4, 8].filter(value => value <= d.rewardMax).join(' / ')}<br>当前奖励概率：1 ${percent(d.rewardWeights[1] ?? 0)} · 2 ${percent(d.rewardWeights[2] ?? 0)} · 4 ${percent(d.rewardWeights[4] ?? 0)} · 8 ${percent(d.rewardWeights[8] ?? 0)}<br>Expected Ball Value：${d.singleRewardExpected} · Reward Spawn Chance：${percent(d.finalRewardSpawnChance)}<br>每Turn Expected Generated Value：${d.expectedGeneratedThisTurn}<br>最近10T 生成 / 可达 / 捕获 / 投入：${last?.rollingRewardSpawnValue ?? 0} / ${last?.rollingRewardReachableValue ?? 0} / ${last?.rollingRewardCapturedValue ?? 0} / ${last?.rollingRewardRealizedValue ?? 0}<br>Raw Capture Rate：${last ? percent(last.rewardCaptureRate) : '—'} · Opportunity Capture Rate：${last ? percent(last.rewardOpportunityCaptureRate) : '—'}<br>RewardRealizationRate：${last ? percent(last.rewardRealizationRate) : '—'}<br>DifficultyFactor：${(d.difficultyFactor * 100).toFixed(1)}%<br>Enemy Volume：${d.enemyVolumeMultiplier.toFixed(1)} · Enemy HP：${d.enemyHpMultiplier.toFixed(1)}<br>Reward Rate：${d.rewardRateMultiplier.toFixed(1)} · Growth：${d.rewardProgression.toFixed(1)} · Bias：${d.highValueBias.toFixed(2)}<br>Enemy Count：${d.enemyCount} / ${d.enemyCountCap}<br>Lane Enemy Count (L1–L5)：${lanes.enemyCounts.join(' / ')}<br>最近10 Turn Spawn (L1–L5)：${lanes.recentEnemySpawns.join(' / ')}<br>本Turn理论HP Budget：${d.theoreticalHpBudget}<br>有效Budget收入：${d.effectiveHpBudgetIncome}<br>本Turn实际消费 Budget：${d.actualSpendBudget}<br>当前 Budget Bank：${d.hpBudgetBank} / ${d.maxBudgetBank}<br>普通怪目标HP：${d.normalEnemyTargetHp}`;
+      economy = `<br><strong>Moyu Economy V2</strong><br>Current Moyu：${this.manager.state.moyuBank}<br>Moyu Capacity：${this.manager.moyuCapacity()}<br>Highest Defender：${this.manager.state.highestDefenderValue}<br>Total Moyu Generated：${this.manager.state.totalMoyuGenerated}<br>Total Moyu Earned：${this.manager.state.totalMoyuEarned}<br>Total Moyu Extracted：${this.manager.state.totalMoyuExtracted}<br>Total Moyu Overflow：${this.manager.state.totalMoyuOverflow}<br>实际 PlantPower：${last?.plantPower ?? 0}<br>Expected PlantPower：${d.expectedPlantPower}（标准回收 ${percent(d.baselineCaptureRate)}）<br>当前摸鱼值池：${d.moyuStageValues.join(' / ')} · Carrier Rate：${percent(d.moyuCarrierChance)}<br>每Turn Expected Moyu Value：${d.expectedGeneratedThisTurn} · 累计：${d.expectedGeneratedCumulative}<br>战场 Pickup：${this.manager.state.moyuPickups.length}<br>Projectile Potential：${theoretical} · Enemy Damage：${effective}<br>Moyu Intercept Waste：${total('moyuInterceptWaste')}（${theoretical ? percent(total('moyuInterceptWaste') / theoretical) : '—'}）<br>Enemy Count：${d.enemyCount} / ${d.enemyCountCap}<br>Lane Enemy Count (L1–L5)：${lanes.enemyCounts.join(' / ')}<br>最近10 Turn Spawn (L1–L5)：${lanes.recentEnemySpawns.join(' / ')}<br>当前 Budget Bank：${d.hpBudgetBank} / ${d.maxBudgetBank}`;
     }
     const firstReached = (value: number) => this.manager.state.metrics.find(metric => metric.highestPlantValue >= value)?.turn ?? '未达到';
     const stage = highest < 32 ? 'Early Game' : highest < 256 ? 'Mid Game' : highest < 512 ? 'Late Game' : 'Deep Endless';
-    const displayedRewardCap = ACTIVE_DIFFICULTY.mode === 'reward-economy' ? this.manager.rewardEconomyDiagnostics().rewardMax : REWARD_ECONOMY_CURVE_V2.maxNaturalSpawnValue;
-    stats.innerHTML = `分数：${this.manager.state.score}<br>当前理论总火力：${last?.plantPower ?? 0}<br>最近10 Turn 火力利用率：${theoretical ? percent(effective / theoretical) : '—'}<br>当前 BattlefieldPressure：${last?.battlefieldPressure.toFixed(1) ?? '0'}<br>Pressure / PlantPower：${last ? percent(last.pressureRatio) : '—'}<br>本 Turn 待Spawn Batch Pressure：${last?.pendingSpawnBatchPressure.toFixed(1) ?? '0'}<br>Spawn后预测PressureRatio：${last ? percent(last.predictedSpawnPressureRatio) : '—'}<br>当前最高植物：${highest} · ${stage}<br>首次达到 8 / 16 / 32 / 64：${firstReached(8)} / ${firstReached(16)} / ${firstReached(32)} / ${firstReached(64)}<br>当前奖励球自然生成上限：${displayedRewardCap}${formula}${economy}<br><small>奖励获取：&lt;20% 较差 · 20–30% 偏低 · 约30% 基准 · 30–40% 良好 · 50%+ 非常优秀</small><hr style="border-color:#59675c"><small>${safety}</small><hr style="border-color:#59675c">`;
+    stats.innerHTML = `分数：${this.manager.state.score}<br>当前理论总火力：${last?.plantPower ?? 0}<br>最近10 Turn 火力利用率：${theoretical ? percent(effective / theoretical) : '—'}<br>当前 BattlefieldPressure：${last?.battlefieldPressure.toFixed(1) ?? '0'}<br>Pressure / PlantPower：${last ? percent(last.pressureRatio) : '—'}<br>本 Turn 待Spawn Batch Pressure：${last?.pendingSpawnBatchPressure.toFixed(1) ?? '0'}<br>Spawn后预测PressureRatio：${last ? percent(last.predictedSpawnPressureRatio) : '—'}<br>当前最高办公用品：${highest} · ${stage}<br>首次达到 8 / 16 / 32 / 64：${firstReached(8)} / ${firstReached(16)} / ${firstReached(32)} / ${firstReached(64)}${formula}${economy}<hr style="border-color:#59675c"><small>${safety}</small><hr style="border-color:#59675c">`;
     const runs = this.difficultyPanel?.querySelector<HTMLElement>('[data-runs]');
     if (runs) runs.innerHTML = this.runSummaries.length ? `<strong>已结束对局（死亡记录）</strong><br>${this.runSummaries.map((run, index) => `#${index + 1} 分${run.score} · Turn ${run.turn} · 最高${run.highestPlantValue}<br>PlantPower ${run.plantPower} · 奖励${percent(run.rewardCaptureRate)} · 火力${percent(run.firepowerUtilization)} · 死亡压力${percent(run.deathPressureRatio)}<br>死亡前10T敌人数 ${run.lastTenEnemyCounts.join(' → ')}`).join('<hr style="border-color:#59675c">')}<hr style="border-color:#59675c">` : '';
   }
@@ -835,12 +1181,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.breathingSprites = [];
     this.children.removeAll();
     const s = this.manager.state;
-    const visualRewards = visualStart?.rewardBalls ?? s.rewardBalls;
+    const visualMoyuPickups = visualStart?.moyuPickups ?? s.moyuPickups;
     const visualEnemies = visualStart?.enemies ?? s.enemies;
     // Renderer never reads the already-resolved logical slot during a turn.
     // This makes "ball arrives, then plant appears" an invariant rather than
     // a best-effort ordering of render calls.
     const visualBirthSlot = visualStart?.birthSlot ?? this.visualBirthSlot;
+    const visualMoyuBank = visualStart?.moyuBank ?? this.visualMoyuBank;
 
     // Background (bottom layer)
     this.add.image(L.width / 2, L.height / 2, 'battlefield-v0').setDisplaySize(L.width, L.height).setDepth(0);
@@ -862,6 +1209,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // UI text
     this.add.text(960, L.header.scoreY, `分数 ${s.score.toLocaleString()}`, { fontSize: '46px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 8 }).setOrigin(.5, 0).setDepth(10);
     this.add.text(L.header.settingsX, 30, '⚙', { fontSize: '50px', color: '#e4efe8' }).setDepth(10);
+    this.renderMoyuBankHud(visualMoyuBank);
 
     // Grid lanes & cells
     for (let r = 0; r < BOARD.rows; r++) {
@@ -911,19 +1259,19 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       this.add.text(slotCenter.x, slotCenter.y + 12, '等待奖励球', { fontSize: '17px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(10);
     }
 
-    // Reward balls — sprite based
+    // Moyu Pickups are battle entities, not instant income. Each uses a small
+    // green icon plus value and can be intercepted by any later projectile.
     const stacks = new Map<string, number>();
-    for (const b of visualRewards) {
-      const key = `${b.row}:${b.col}`, index = stacks.get(key) ?? 0;
+    for (const pickup of visualMoyuPickups) {
+      const key = `${pickup.row}:${pickup.col}`, index = stacks.get(key) ?? 0;
       stacks.set(key, index + 1);
       const shift: [number, number][] = [[-20, -12], [0, 0], [20, 12]];
       const sh = shift[index % 3];
-      const rx = fieldX(b.col) + L.board.battlefieldCellWidth / 2 + sh[0];
-      const ry = TOP + b.row * ROW + ROW / 2 + sh[1];
-      const rframe = `reward-${Math.min(b.value, 8)}` as const;
-      const rspr = this.addBreathingEntity(rx, ry, rframe, 56, 56, 22, 2, 600 + index * 70, b.id);
-      rspr.setData('rewardId', b.id);
-      rspr.add(this.add.text(0, 0, String(b.value), { fontSize: '18px', color: '#51380a', fontStyle: 'bold' }).setOrigin(.5));
+      const px = fieldX(pickup.col) + L.board.battlefieldCellWidth / 2 + sh[0];
+      const py = TOP + pickup.row * ROW + ROW / 2 + sh[1];
+      const pspr = this.addBreathingEntity(px, py, 'moyu-icon', 62, 62, 22, 2, 600 + index * 70, pickup.id);
+      pspr.setData('moyuPickupId', pickup.id);
+      pspr.add(this.add.text(0, 0, String(pickup.value), { fontSize: '19px', color: '#17370f', stroke: '#eaffd9', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
     }
 
     // Enemies — sprite based (keep aspect ratio). enemyColOffset shifts them right so
@@ -939,15 +1287,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       espr.setData('enemyId', e.id);
 
       // HP label
-      const hpLabel = this.add.text(0, eh * 0.28, `${e.hp}`, { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0);
+      const hpLabel = this.add.text(0, eh * 0.28, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
     }
 
-    // Game over overlay
-    if (s.gameOver) {
-      this.add.text(960, 490, 'GAME OVER\n点击任意处重开', { fontSize: '72px', color: '#ffb5a8', backgroundColor: '#491d1d', align: 'center' }).setPadding(28).setOrigin(.5).setDepth(100);
-    }
     this.refreshDifficultyPanel();
   }
 }

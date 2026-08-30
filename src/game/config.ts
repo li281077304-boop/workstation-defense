@@ -42,6 +42,10 @@ export type DifficultyConfig = {
   targetPressureRatio: number;
   /** Score mode: 'damage' = 1 point per actual HP of damage dealt; 'kill' = maxHp at kill. */
   scoreMode: 'damage' | 'kill';
+  /** Moyu Economy V2: chance that a legal enemy carries a currency drop. */
+  moyuCarrierChance: number;
+  /** Three-value pools by turn band. Older reward-ball fields remain only for migration compatibility. */
+  moyuValueStages: Array<{ startTurn: number; values: number[]; weights: number[] }>;
 };
 
 export const DifficultyConfig: DifficultyConfig = {
@@ -75,7 +79,18 @@ export const DifficultyConfig: DifficultyConfig = {
   metricsWindowTurns: 10,
   targetPressureRatio: 0.58,
   scoreMode: 'damage',
+  moyuCarrierChance: 0.80,
+  moyuValueStages: [
+    { startTurn: 1, values: [1, 2, 4], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 16, values: [2, 4, 8], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 36, values: [4, 8, 16], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 61, values: [8, 16, 32], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 101, values: [16, 32, 64], weights: [0.20, 0.55, 0.25] },
+  ],
 };
+
+/** The highest defender value currently available to the player. */
+export const MAX_DEFENDER_VALUE = 4096;
 
 /** Approved playable configuration captured after the 2,510-score playtest. */
 export const PLAYABLE_BASELINE_V1: Readonly<DifficultyConfig> = Object.freeze(structuredClone(DifficultyConfig));
@@ -169,6 +184,9 @@ export type RewardEconomyConfig = {
   showMultikillFeedback: boolean;
   metricsLogging: boolean;
   metricsWindowTurns: number;
+  /** Carrier/drop rules are intentionally independent from enemy HP. */
+  moyuCarrierChance: number;
+  moyuValueStages: Array<{ startTurn: number; values: number[]; weights: number[] }>;
 };
 
 export const REWARD_ECONOMY_CURVE_V2: Readonly<RewardEconomyConfig> = Object.freeze({
@@ -185,6 +203,14 @@ export const REWARD_ECONOMY_CURVE_V2: Readonly<RewardEconomyConfig> = Object.fre
   showMultikillFeedback: true,
   metricsLogging: false,
   metricsWindowTurns: 10,
+  moyuCarrierChance: 0.80,
+  moyuValueStages: [
+    { startTurn: 1, values: [1, 2, 4], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 16, values: [2, 4, 8], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 36, values: [4, 8, 16], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 61, values: [8, 16, 32], weights: [0.20, 0.55, 0.25] },
+    { startTurn: 101, values: [16, 32, 64], weights: [0.20, 0.55, 0.25] },
+  ],
 });
 
 /**

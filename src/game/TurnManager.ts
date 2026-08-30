@@ -1,16 +1,55 @@
-import { BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, largeEnemyChanceFor, maxRewardValueFor, type CombatRules } from './config';
-import { cumulativeExpectedGeneratedReward, difficultyFactor, enemyHpFor, expectedPlantPower, expectedRewardPerTurn, expectedSingleRewardValue, hpIncomeBudget, largeEnemyChanceFor as curveLargeChance, largeEnemyHpFor, largeEnemyHpV2, normalEnemyHp, normalEnemyTargetHp, perTurnBudget, rewardChanceFor, rewardMaxByTurn, rewardMaxFor, rewardValueWeights, rewardWeightAlpha, type RewardWeightOptions } from './difficulty';
-import type { Enemy, GameState, Move, Plant, Projectile, RewardBall, SpawnSafetyRecord, TurnEvent, TurnMetrics } from './types';
+import { BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, MAX_DEFENDER_VALUE, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, largeEnemyChanceFor, maxRewardValueFor, type CombatRules } from './config';
+import { cumulativeExpectedGeneratedReward, cumulativeExpectedMoyuValue, difficultyFactor, enemyHpFor, expectedMoyuValueForTurn, expectedPlantPower, expectedRewardPerTurn, expectedSingleRewardValue, hpIncomeBudget, largeEnemyChanceFor as curveLargeChance, largeEnemyHpFor, largeEnemyHpV2, normalEnemyHp, normalEnemyTargetHp, perTurnBudget, rewardChanceFor, rewardMaxByTurn, rewardMaxFor, rewardValueWeights, rewardWeightAlpha, type RewardWeightOptions } from './difficulty';
+import type { Enemy, GameState, Move, MoyuPickup, Plant, Projectile, RewardBall, SpawnSafetyRecord, TurnEvent, TurnMetrics } from './types';
 
 const key = (r: number, c: number) => `${r}:${c}`;
 const clone = <T>(v: T): T => structuredClone(v);
 
+/** Logic-only director memory needed to continue the same difficulty curve. */
+export type TurnManagerRuntimeState = {
+  budgetBank: number;
+  rewardDryTurns: number;
+  lastSpentBudget: number;
+  hpBudgetBankV2: number;
+  cumulativeExpectedGeneratedV2: number;
+  dryRewardTurnsV2: number;
+  lastSpentHpBudgetV2: number;
+  lastIncomeHpBudgetV2: number;
+  lastEffectiveIncomeHpBudgetV2: number;
+  lastAllowedSpendHpBudgetV2: number;
+  lastMaxHpBudgetBankV2: number;
+  laneSpawnHistory: Array<{ turn: number; row: number; height: 1 | 2; kind: 'enemy' | 'reward' }>;
+  recentEnemyLaneAnchors: number[];
+};
+
+export type TurnManagerRunSnapshot = { state: GameState; runtime: TurnManagerRuntimeState };
+
+export const isTurnManagerRuntimeState = (value: unknown): value is TurnManagerRuntimeState => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const numbers = ['budgetBank', 'rewardDryTurns', 'lastSpentBudget', 'hpBudgetBankV2', 'cumulativeExpectedGeneratedV2', 'dryRewardTurnsV2', 'lastSpentHpBudgetV2', 'lastIncomeHpBudgetV2', 'lastEffectiveIncomeHpBudgetV2', 'lastAllowedSpendHpBudgetV2', 'lastMaxHpBudgetBankV2'];
+  return numbers.every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
+    && Array.isArray(record.laneSpawnHistory)
+    && Array.isArray(record.recentEnemyLaneAnchors);
+};
+
 export function emptyState(): GameState {
-  return { plants: Array.from({ length: BOARD.rows }, () => Array<Plant | null>(BOARD.defenseCols).fill(null)), enemies: [], rewardBalls: [], birthSlot: null, score: 0, turn: 0, gameOver: false, lastLog: [], events: [], metrics: [], rewardLedger: [], spawnSafety: [], rewardRealized: [] };
+  return {
+    plants: Array.from({ length: BOARD.rows }, () => Array<Plant | null>(BOARD.defenseCols).fill(null)),
+    enemies: [], rewardBalls: [], moyuPickups: [], moyuBank: 0,
+    highestDefenderValue: 1,
+    totalMoyuGenerated: 0,
+    totalMoyuEarned: 0,
+    totalMoyuExtracted: 0,
+    totalMoyuOverflow: 0,
+    birthSlot: null, score: 0, turn: 0, gameOver: false, lastLog: [], events: [], metrics: [], rewardLedger: [], spawnSafety: [], rewardRealized: [],
+  };
 }
 
 export class TurnManager {
-  private currentMetrics = { theoreticalDamage: 0, effectiveEnemyDamage: 0, rewardSpawnValue: 0, rewardCapturedValue: 0, rewardRealizedValue: 0 };
+  private currentMetrics = { theoreticalDamage: 0, effectiveEnemyDamage: 0, rewardSpawnValue: 0, rewardCapturedValue: 0, rewardRealizedValue: 0, overkillWaste: 0, moyuInterceptWaste: 0, moyuCollectedValue: 0, moyuPickupCount: 0, autoRecoveredMoyuValue: 0, projectileCount: 0 };
+  /** Drops remain invisible/unhittable until every projectile of this turn finishes. */
+  private pendingMoyuDrops: Array<Omit<MoyuPickup, 'id' | 'isCollected' | 'spawnTurn'>> = [];
   // ENDLESS_CURVE_V1 runtime state (formula mode)
   private budgetBank = 0;
   private rewardDryTurns = 0;
@@ -27,7 +66,54 @@ export class TurnManager {
   /** Recent spawn lanes are presentation-neutral spawn-director memory. */
   private laneSpawnHistory: Array<{ turn: number; row: number; height: 1 | 2; kind: 'enemy' | 'reward' }> = [];
   private recentEnemyLaneAnchors: number[] = [];
-  constructor(public state: GameState = emptyState(), public rules: CombatRules, private random: () => number = Math.random, public forcedMode?: 'baseline' | 'endless-curve' | 'reward-economy') {}
+  constructor(public state: GameState = emptyState(), public rules: CombatRules, private random: () => number = Math.random, public forcedMode?: 'baseline' | 'endless-curve' | 'reward-economy') {
+    this.normalizeMoyuAccount();
+  }
+
+  /** Pure capacity rule: the historical maximum Defender, never the live board. */
+  static moyuCapacityFor(maxDefenderValue: number): number {
+    const safeHighest = Number.isFinite(maxDefenderValue) ? Math.max(1, Math.floor(maxDefenderValue)) : 1;
+    return Math.min(32, Math.max(1, Math.floor(safeHighest / 4)));
+  }
+
+  /** The public UI/debug value. This also repairs direct test/editor state safely. */
+  moyuCapacity(): number {
+    this.normalizeMoyuAccount();
+    return TurnManager.moyuCapacityFor(this.state.highestDefenderValue);
+  }
+
+  private liveHighestDefenderValue(): number {
+    return Math.max(1, ...this.state.plants.flatMap(row => row.flatMap(plant => plant ? [plant.value] : [])));
+  }
+
+  private noteHighestDefender(value: number) {
+    if (Number.isFinite(value) && value >= 1) this.state.highestDefenderValue = Math.max(this.state.highestDefenderValue, value);
+  }
+
+  /**
+   * Makes old/hand-authored state safe without ever lowering a run's historical
+   * high-water mark. Only migration/restore needs this repair path; normal
+   * gameplay reaches it through `creditMoyu` and `noteHighestDefender`.
+   */
+  private normalizeMoyuAccount() {
+    const candidate = Number.isFinite(this.state.highestDefenderValue) ? this.state.highestDefenderValue : 1;
+    this.state.highestDefenderValue = Math.max(1, Math.floor(candidate), this.liveHighestDefenderValue());
+    this.state.totalMoyuGenerated = Math.max(0, Math.floor(this.state.totalMoyuGenerated ?? 0));
+    this.state.totalMoyuExtracted = Math.max(0, Math.floor(this.state.totalMoyuExtracted ?? 0));
+    this.state.totalMoyuOverflow = Math.max(0, Math.floor(this.state.totalMoyuOverflow ?? 0));
+    this.state.moyuBank = Math.max(0, Math.floor(this.state.moyuBank ?? 0));
+    const capacity = TurnManager.moyuCapacityFor(this.state.highestDefenderValue);
+    if (this.state.moyuBank > capacity) {
+      this.state.totalMoyuOverflow += this.state.moyuBank - capacity;
+      this.state.moyuBank = capacity;
+    }
+    // V1 had no ledger. The only safe invariant at migration time is to begin
+    // the known ledger from current bank plus known extractions.
+    this.state.totalMoyuEarned = Math.max(this.state.moyuBank + this.state.totalMoyuExtracted, Math.floor(this.state.totalMoyuEarned ?? 0));
+    // Preserve the accounting invariant even for stale/debug-edited saves.
+    this.state.totalMoyuEarned = this.state.moyuBank + this.state.totalMoyuExtracted;
+    this.state.totalMoyuGenerated = Math.max(this.state.totalMoyuGenerated, this.state.totalMoyuEarned + this.state.totalMoyuOverflow);
+  }
 
   /** Effective config for the active difficulty mode. */
   private get cfg() {
@@ -53,6 +139,34 @@ export class TurnManager {
   private finalRewardSpawnChance() {
     return Math.min(1, REWARD_ECONOMY_CURVE_V2.rewardSpawnChance * REWARD_ECONOMY_TEST_CONTROLS.rewardRateMultiplier);
   }
+  /** Carrier selection is independent from HP, size, skin, and combat power. */
+  /** Test controls alter only the standard carrier economy, never actual board power. */
+  private moyuCarrierChance(): number {
+    const cfg = this.mode === 'reward-economy' ? REWARD_ECONOMY_CURVE_V2 : this.rules;
+    return Math.min(1, cfg.moyuCarrierChance * REWARD_ECONOMY_TEST_CONTROLS.rewardRateMultiplier);
+  }
+  private moyuStages() {
+    const cfg = this.mode === 'reward-economy' ? REWARD_ECONOMY_CURVE_V2 : this.rules;
+    const progression = Math.max(.1, REWARD_ECONOMY_TEST_CONTROLS.rewardProgression);
+    const bias = REWARD_ECONOMY_TEST_CONTROLS.highValueBias - .70;
+    return cfg.moyuValueStages.map(stage => ({
+      startTurn: Math.max(1, Math.ceil(stage.startTurn / progression)),
+      values: [...stage.values],
+      // Default bias .70 is neutral; positive values make the higher tier
+      // within the active stage more likely without expanding that stage.
+      weights: stage.weights.map((weight, index) => weight * Math.pow(stage.values[index], bias)),
+    }));
+  }
+  private moyuValueForNewEnemy(): number {
+    const cfg = this.mode === 'reward-economy' ? REWARD_ECONOMY_CURVE_V2 : this.rules;
+    if (this.random() >= this.moyuCarrierChance()) return 0;
+    const stages = this.moyuStages();
+    const stage = [...stages].reverse().find(candidate => this.state.turn >= candidate.startTurn) ?? stages[0];
+    const total = stage.weights.reduce((sum, weight) => sum + weight, 0);
+    let roll = this.random() * total;
+    for (let index = 0; index < stage.values.length; index++) { roll -= stage.weights[index]; if (roll < 0) return stage.values[index]; }
+    return stage.values.at(-1)!;
+  }
 
   perform(move: Move): boolean {
     if (this.state.gameOver || !this.applyMove(move)) return false;
@@ -60,11 +174,11 @@ export class TurnManager {
     this.state.lastLog = [];
     this.state.events = [];
     this.state.spawnSafety = [];
-    this.currentMetrics = { theoreticalDamage: 0, effectiveEnemyDamage: 0, rewardSpawnValue: 0, rewardCapturedValue: 0, rewardRealizedValue: 0 };
+    this.currentMetrics = { theoreticalDamage: 0, effectiveEnemyDamage: 0, rewardSpawnValue: 0, rewardCapturedValue: 0, rewardRealizedValue: 0, overkillWaste: 0, moyuInterceptWaste: 0, moyuCollectedValue: 0, moyuPickupCount: 0, autoRecoveredMoyuValue: 0, projectileCount: 0 };
     this.record({ type: 'turn-start', message: `Turn ${this.state.turn}: firing` });
     this.fireAll();
     this.advanceEnemies();
-    this.advanceRewardBalls();
+    this.advanceMoyuPickups();
     if (!this.state.gameOver) {
       if (this.mode === 'reward-economy') {
         this.spawnRewardEconomy();
@@ -74,6 +188,9 @@ export class TurnManager {
         for (let i = 0; i < this.rules.enemiesPerTurn; i++) this.spawnAutomatic();
       }
     }
+    // New drops are visible only after every current projectile and movement
+    // phase has settled; like a new enemy, they do not move on their birth turn.
+    this.flushPendingMoyuDrops();
     this.recordMetrics();
     return true;
   }
@@ -89,6 +206,7 @@ export class TurnManager {
       if (!dst) this.state.plants[move.to.row][move.to.col] = incoming;
       else if (dst.value === incoming.value) this.state.plants[move.to.row][move.to.col] = { id: crypto.randomUUID(), value: dst.value * 2 };
       else return false;
+      this.noteHighestDefender(this.state.plants[move.to.row][move.to.col]!.value);
       this.state.birthSlot = null;
       // REWARD_ECONOMY: persist realized value (index = new turn - 1, since turn++ happens after applyMove).
       this.state.rewardRealized.push(realizedValue);
@@ -96,18 +214,19 @@ export class TurnManager {
     }
     const source = this.state.plants[move.from.row]?.[move.from.col];
     if (!source || (move.from.row === move.to.row && move.from.col === move.to.col)) return false;
-    if (!dst) { this.state.plants[move.to.row][move.to.col] = source; this.state.plants[move.from.row][move.from.col] = null; return true; }
-    if (source.value === dst.value) { this.state.plants[move.to.row][move.to.col] = { id: crypto.randomUUID(), value: source.value * 2 }; this.state.plants[move.from.row][move.from.col] = null; return true; }
+    if (!dst) { this.state.plants[move.to.row][move.to.col] = source; this.state.plants[move.from.row][move.from.col] = null; this.noteHighestDefender(source.value); return true; }
+    if (source.value === dst.value) { this.state.plants[move.to.row][move.to.col] = { id: crypto.randomUUID(), value: source.value * 2 }; this.state.plants[move.from.row][move.from.col] = null; this.noteHighestDefender(source.value * 2); return true; }
     this.state.plants[move.to.row][move.to.col] = source; this.state.plants[move.from.row][move.from.col] = dst; return true;
   }
 
   private fireAll() {
-    this.markReachableRewards();
     for (let row = 0; row < BOARD.rows; row++) {
       for (const plant of this.state.plants[row]) if (plant) {
         this.currentMetrics.theoreticalDamage += plant.value;
         for (const projectile of this.createProjectiles(plant.value, row)) {
           projectile.sourcePlantId = plant.id;
+          projectile.sourceDefenderId = plant.id;
+          this.currentMetrics.projectileCount++;
           this.resolveProjectile(projectile);
         }
       }
@@ -123,29 +242,27 @@ export class TurnManager {
     }
   }
 
-  /** Confirmed Android rule: min(value, 4) separate shots, each with divisible damage. */
+  /** Moyu Economy V2: exactly one shot per defender and its full value is the damage. */
   createProjectiles(value: number, lane: number): Projectile[] {
-    const projectileCount = Math.min(value, 4);
-    return Array.from({ length: projectileCount }, () => ({ remainingDamage: value / projectileCount, lane, position: 0 }));
+    return [{ id: crypto.randomUUID(), lane, damage: value, remainingDamage: value, position: 0, isAlive: true }];
   }
 
   /** Exposed for deterministic rules tests; the scene never calls it directly. */
   resolveProjectile(projectile: Projectile) {
-    this.record({ type: 'shot', lane: projectile.lane, damage: projectile.remainingDamage, sourcePlantId: projectile.sourcePlantId, message: `Lane ${projectile.lane + 1} shot ${projectile.remainingDamage}` });
-    while (projectile.remainingDamage > 0) {
+    // Tests and debug tools may pass a minimal legacy-shaped projectile.
+    projectile.id ??= crypto.randomUUID();
+    projectile.damage ??= projectile.remainingDamage;
+    projectile.isAlive ??= true;
+    this.record({ type: 'shot', lane: projectile.lane, damage: projectile.damage, sourcePlantId: projectile.sourcePlantId, subjectId: projectile.id, message: `Lane ${projectile.lane + 1} shot ${projectile.damage}` });
+    while (projectile.isAlive && projectile.remainingDamage > 0) {
       const target = this.nextTarget(projectile.lane, projectile.position);
-      if (!target) return;
+      if (!target) {
+        this.finishProjectile(projectile, 'overkill');
+        return;
+      }
       projectile.position = target.col;
-      if (target.kind === 'reward') {
-        this.record({ type: 'reward-hit', lane: projectile.lane, col: target.col, subjectId: target.ball.id, value: target.ball.value, damage: projectile.remainingDamage, message: `Lane ${projectile.lane + 1} hit reward ${target.ball.value}` });
-        const previousSlot = this.state.birthSlot;
-        this.state.rewardBalls = this.state.rewardBalls.filter(ball => ball.id !== target.ball.id);
-        const ledger = this.state.rewardLedger.find(entry => entry.id === target.ball.id);
-        if (ledger) ledger.capturedTurn = this.state.turn;
-        this.currentMetrics.rewardCapturedValue += target.ball.value;
-        this.record({ type: 'reward-captured', lane: projectile.lane, col: target.col, subjectId: target.ball.id, value: target.ball.value, damage: projectile.remainingDamage, message: `Lane ${projectile.lane + 1} captured reward ${target.ball.value}; projectile blocked` });
-        this.replaceBirthIfHigher(target.ball.value);
-        if (this.state.birthSlot !== previousSlot) this.record({ type: 'spawn-slot-updated', value: this.state.birthSlot!, message: `Birth slot updated to ${this.state.birthSlot}` });
+      if (target.kind === 'moyu') {
+        this.collectMoyu(target.pickup, projectile);
         return;
       }
       const hpBefore = target.enemy.hp;
@@ -156,21 +273,25 @@ export class TurnManager {
       if (projectile.remainingDamage < hpBefore) {
         target.enemy.hp = hpAfter;
         if (this.rules.scoreMode === 'damage') this.state.score += projectile.remainingDamage;
+        projectile.remainingDamage = 0;
+        projectile.isAlive = false;
+        this.record({ type: 'projectile-ended', subjectId: projectile.id, lane: projectile.lane, reason: 'enemy-absorbed', message: `Projectile ${projectile.id} absorbed by enemy` });
         return;
       }
       projectile.remainingDamage -= hpBefore;
       this.kill(target.enemy, target.col);
       this.record({ type: 'pierce', lane: projectile.lane, col: target.col, subjectId: target.enemy.id, remainingDamage: projectile.remainingDamage, message: `Lane ${projectile.lane + 1} pierced ${target.enemy.id}; ${projectile.remainingDamage} remains` });
+      if (projectile.remainingDamage === 0) { projectile.isAlive = false; this.record({ type: 'projectile-ended', subjectId: projectile.id, lane: projectile.lane, reason: 'enemy-absorbed', message: `Projectile ${projectile.id} spent on enemy` }); }
     }
   }
 
-  private nextTarget(lane: number, after: number): { kind: 'enemy'; enemy: Enemy; col: number } | { kind: 'reward'; ball: RewardBall; col: number } | null {
+  private nextTarget(lane: number, after: number): { kind: 'enemy'; enemy: Enemy; col: number } | { kind: 'moyu'; pickup: MoyuPickup; col: number } | null {
     const enemies = this.state.enemies.filter(enemy => lane >= enemy.row && lane < enemy.row + enemy.height && enemy.col >= after)
       .map(enemy => ({ kind: 'enemy' as const, enemy, col: enemy.col }));
-    const rewards = this.state.rewardBalls.filter(ball => ball.row === lane && ball.col >= after)
-      .map(ball => ({ kind: 'reward' as const, ball, col: ball.col }));
-    // Same-cell enemy/reward ordering has not been observed; reward first is a conservative blocker.
-    return [...enemies, ...rewards].sort((a, b) => a.col - b.col || (a.kind === 'reward' ? -1 : 1))[0] ?? null;
+    const pickups = this.state.moyuPickups.filter(pickup => !pickup.isCollected && pickup.row === lane && pickup.col >= after)
+      .map(pickup => ({ kind: 'moyu' as const, pickup, col: pickup.col }));
+    // A pickup at the same cell is intentionally an intercepting blocker.
+    return [...enemies, ...pickups].sort((a, b) => a.col - b.col || (a.kind === 'moyu' ? -1 : 1))[0] ?? null;
   }
 
   private kill(enemy: Enemy, col: number) {
@@ -178,6 +299,12 @@ export class TurnManager {
     if (this.rules.scoreMode === 'kill') this.state.score += enemy.maxHp;
     else if (this.rules.scoreMode === 'damage') this.state.score += enemy.hp; // last hit that killed it
     this.record({ type: 'kill', lane: enemy.row, col, subjectId: enemy.id, value: enemy.maxHp, message: `Defeated ${enemy.id} (+${enemy.maxHp})` });
+    if ((enemy.moyuValue ?? 0) > 0) {
+      const value = enemy.moyuValue!;
+      enemy.moyuValue = 0; // exactly-once guard before the delayed spawn.
+      this.pendingMoyuDrops.push({ value, row: enemy.row, col });
+      this.record({ type: 'moyu-drop-queued', lane: enemy.row, col, subjectId: enemy.id, value, message: `Queued Moyu ${value} drop from ${enemy.id}` });
+    }
   }
 
   private advanceEnemies() {
@@ -185,7 +312,7 @@ export class TurnManager {
     for (const enemy of this.state.enemies) {
       const next = { ...enemy, col: enemy.col - 1 };
       const conflicts = occupiedBeforeAdvance.some(other => other.id !== enemy.id && this.footprintsOverlap(next, other)) ||
-        this.state.rewardBalls.some(ball => ball.row >= next.row && ball.row < next.row + next.height && ball.col >= next.col && ball.col < next.col + next.width);
+        this.state.moyuPickups.some(pickup => !pickup.isCollected && pickup.row >= next.row && pickup.row < next.row + next.height && pickup.col >= next.col && pickup.col < next.col + next.width);
       if (conflicts) {
         this.record({ type: 'spawn-blocked', subjectId: enemy.id, message: `${enemy.id} held position: occupied destination` });
         continue;
@@ -196,25 +323,137 @@ export class TurnManager {
     if (this.state.enemies.some(e => e.col < 0)) { this.state.gameOver = true; this.record({ type: 'game-over', message: 'GAME OVER: enemy entered defense area' }); }
   }
 
-  private advanceRewardBalls() {
-    for (const ball of this.state.rewardBalls) {
-      if (ball.col <= 0) continue; // left-edge handling remains deliberately undecided; see OPEN_QUESTIONS.
-      if (!this.canPlaceReward(ball.row, ball.col - 1)) {
-        this.record({ type: 'spawn-blocked', subjectId: ball.id, message: `Reward ${ball.id} held position: occupied destination` });
+  private advanceMoyuPickups() {
+    for (const pickup of [...this.state.moyuPickups]) {
+      if (pickup.isCollected) continue;
+      if (pickup.col <= 0) { this.autoRecoverMoyu(pickup); continue; }
+      if (!this.canPlaceMoyu(pickup.row, pickup.col - 1, pickup.id)) {
+        this.record({ type: 'spawn-blocked', subjectId: pickup.id, message: `Moyu ${pickup.id} held position: occupied destination` });
         continue;
       }
-      ball.col--;
-      this.record({ type: 'reward-advance', subjectId: ball.id, lane: ball.row, col: ball.col, message: `Reward ${ball.id} advanced to column ${ball.col}` });
+      pickup.col--;
+      this.record({ type: 'moyu-advance', subjectId: pickup.id, lane: pickup.row, col: pickup.col, message: `Moyu ${pickup.id} advanced to column ${pickup.col}` });
     }
   }
 
-  private replaceBirthIfHigher(value: number) { if (this.state.birthSlot === null || value > this.state.birthSlot) this.state.birthSlot = value; }
+  /** Spawn delayed drops after (and only after) every current-turn projectile settles. */
+  private flushPendingMoyuDrops() {
+    for (const pending of this.pendingMoyuDrops.splice(0)) {
+      const pickup: MoyuPickup = { id: crypto.randomUUID(), ...pending, isCollected: false, spawnTurn: this.state.turn };
+      this.state.moyuPickups.push(pickup);
+      this.state.totalMoyuGenerated += pickup.value;
+      this.currentMetrics.moyuPickupCount++;
+      this.record({ type: 'moyu-spawned', subjectId: pickup.id, lane: pickup.row, col: pickup.col, value: pickup.value, message: `Moyu ${pickup.value} dropped onto battlefield` });
+    }
+  }
+
+  /** Public for deterministic tests and the renderer's visual event reconciliation. */
+  finalizeProjectilePhase() { this.flushPendingMoyuDrops(); }
+
+  private creditMoyu(incoming: number, pickup: MoyuPickup, eventType: 'moyu-collected' | 'moyu-auto-recovered', projectile?: Projectile) {
+    const capacity = this.moyuCapacity();
+    const available = Math.max(0, capacity - this.state.moyuBank);
+    const earned = Math.min(incoming, available);
+    const overflow = incoming - earned;
+    this.state.moyuBank += earned;
+    this.state.totalMoyuEarned += earned;
+    this.state.totalMoyuOverflow += overflow;
+    this.currentMetrics.moyuCollectedValue += earned;
+    if (eventType === 'moyu-auto-recovered') this.currentMetrics.autoRecoveredMoyuValue += earned;
+    const action = eventType === 'moyu-collected' ? 'Collected' : 'Auto-recovered';
+    this.record({
+      type: eventType,
+      subjectId: pickup.id,
+      lane: pickup.row,
+      col: pickup.col,
+      value: earned,
+      incomingValue: incoming,
+      earnedValue: earned,
+      overflowValue: overflow,
+      damage: projectile?.remainingDamage,
+      remainingDamage: projectile ? 0 : undefined,
+      message: overflow > 0 ? `${action} Moyu ${incoming}; +${earned}, overflow ${overflow}` : `${action} Moyu ${incoming}; +${earned}`,
+    });
+    if (overflow > 0) {
+      this.record({ type: 'moyu-overflow', subjectId: pickup.id, lane: pickup.row, col: pickup.col, value: overflow, incomingValue: incoming, earnedValue: earned, overflowValue: overflow, reason: 'bank-full', message: earned === 0 ? `Moyu Bank full; overflow ${overflow}` : `Moyu overflow ${overflow}` });
+    }
+    return { earned, overflow };
+  }
+
+  private collectMoyu(pickup: MoyuPickup, projectile: Projectile) {
+    if (pickup.isCollected) return;
+    pickup.isCollected = true;
+    this.state.moyuPickups = this.state.moyuPickups.filter(candidate => candidate.id !== pickup.id);
+    this.currentMetrics.moyuInterceptWaste += projectile.remainingDamage;
+    const waste = projectile.remainingDamage;
+    this.creditMoyu(pickup.value, pickup, 'moyu-collected', projectile);
+    projectile.remainingDamage = 0;
+    projectile.isAlive = false;
+    // The credit event above intentionally records the pre-consumption damage.
+    void waste;
+    this.record({ type: 'projectile-ended', subjectId: projectile.id, lane: projectile.lane, reason: 'moyu-intercepted', message: `Projectile ${projectile.id} consumed by Moyu` });
+  }
+
+  private autoRecoverMoyu(pickup: MoyuPickup) {
+    if (pickup.isCollected) return;
+    pickup.isCollected = true;
+    this.state.moyuPickups = this.state.moyuPickups.filter(candidate => candidate.id !== pickup.id);
+    this.creditMoyu(pickup.value, pickup, 'moyu-auto-recovered');
+  }
+
+  private finishProjectile(projectile: Projectile, reason: 'overkill') {
+    const waste = projectile.remainingDamage;
+    projectile.remainingDamage = 0;
+    projectile.isAlive = false;
+    this.currentMetrics.overkillWaste += waste;
+    this.record({ type: 'projectile-ended', subjectId: projectile.id, lane: projectile.lane, reason, damage: waste, remainingDamage: 0, message: `Projectile ${projectile.id} left battle with ${waste} unused damage` });
+  }
+
+  /** Active extraction is deliberately outside Turn logic; placing the result still consumes a Turn. */
+  extractMoyu(value: number): boolean {
+    if (!Number.isSafeInteger(value) || value < 1 || (value & (value - 1)) !== 0) return false;
+    if (this.state.birthSlot !== null || this.state.moyuBank < value) return false;
+    this.state.moyuBank -= value;
+    this.state.totalMoyuExtracted += value;
+    this.state.birthSlot = value;
+    this.record({ type: 'moyu-extracted', value, message: `Extracted Moyu ${value} into Spawn Slot` });
+    return true;
+  }
+
+  /**
+   * The player-facing extraction action: take the greatest affordable defender
+   * value in one tap.  It deliberately does not start a Turn.
+   */
+  extractHighestMoyu(maxValue = MAX_DEFENDER_VALUE): boolean {
+    if (!Number.isSafeInteger(maxValue) || maxValue < 1 || this.state.birthSlot !== null || this.state.moyuBank < 1) return false;
+    const affordable = Math.min(this.state.moyuBank, maxValue);
+    const value = 2 ** Math.floor(Math.log2(affordable));
+    return this.extractMoyu(value);
+  }
+
+  /**
+   * Predictable Spawn Slot shortcut. It only deploys into an actually empty
+   * cell, so it can never merge, swap, overwrite, or choose a tactical target.
+   */
+  quickDeployFromBirth(): boolean {
+    const targets = [
+      ...Array.from({ length: BOARD.rows }, (_, row) => ({ row, col: BOARD.defenseCols - 1 })),
+      ...Array.from({ length: BOARD.rows }, (_, row) => ({ row, col: 0 })),
+    ];
+    const target = targets.find(({ row, col }) => this.state.plants[row][col] === null);
+    return target ? this.perform({ from: 'birth', to: target }) : false;
+  }
+
   private footprintsOverlap(a: Enemy, b: Enemy): boolean {
     return a.row < b.row + b.height && a.row + a.height > b.row && a.col < b.col + b.width && a.col + a.width > b.col;
   }
   private canPlaceEnemy(candidate: Enemy): boolean {
     return !this.state.enemies.some(enemy => this.footprintsOverlap(candidate, enemy)) &&
-      !this.state.rewardBalls.some(ball => ball.row >= candidate.row && ball.row < candidate.row + candidate.height && ball.col >= candidate.col && ball.col < candidate.col + candidate.width);
+      !this.state.moyuPickups.some(pickup => !pickup.isCollected && pickup.row >= candidate.row && pickup.row < candidate.row + candidate.height && pickup.col >= candidate.col && pickup.col < candidate.col + candidate.width);
+  }
+  private canPlaceMoyu(row: number, col: number, ignoreId?: string): boolean {
+    return !this.state.moyuPickups.some(pickup => pickup.id !== ignoreId && !pickup.isCollected && pickup.row === row && pickup.col === col) &&
+      !this.state.enemies.some(enemy => row >= enemy.row && row < enemy.row + enemy.height && col >= enemy.col && col < enemy.col + enemy.width);
   }
   private canPlaceReward(row: number, col: number): boolean {
     return !this.state.rewardBalls.some(ball => ball.row === row && ball.col === col) &&
@@ -291,14 +530,15 @@ export class TurnManager {
     if (!placement) { this.record({ type: 'spawn-blocked', message: `Debug ${size}×${size} enemy blocked by occupied cells` }); return false; }
     const hp = size === 2 ? 32 : 12;
     const id = crypto.randomUUID().slice(0, 6);
-    this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, skin: this.enemySkin(id, size) });
+    this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, moyuValue: this.moyuValueForNewEnemy(), skin: this.enemySkin(id, size) });
     this.record({ type: 'debug-spawn', subjectId: this.state.enemies.at(-1)?.id, message: `Debug spawned ${size}×${size} enemy` });
     return true;
   }
   /** Adds the fixed tutorial batch while keeping its reward in the analytics ledger. */
   seedOpeningBatch(enemy: Enemy, reward: RewardBall) {
-    if (this.canPlaceEnemy(enemy)) this.state.enemies.push({ ...enemy, skin: enemy.skin ?? this.enemySkin(enemy.id, enemy.width) });
-    if (this.canPlaceReward(reward.row, reward.col)) this.addRewardBall({ ...reward, spawnTurn: 0 });
+    if (this.canPlaceEnemy(enemy)) this.state.enemies.push({ ...enemy, moyuValue: enemy.moyuValue ?? this.moyuValueForNewEnemy(), skin: enemy.skin ?? this.enemySkin(enemy.id, enemy.width) });
+    // RewardBall input is retained only so an older scene can bootstrap; V2 no longer spawns it.
+    void reward;
   }
   /** Spawn only enemies that pass individual killability and whole-batch pressure checks. */
   private spawnAutomatic() {
@@ -340,14 +580,13 @@ export class TurnManager {
         ? largeEnemyHpFor(turn, cfg.hpMultiplier, cfg.largeEnemyHpMultiplier, this.random)
         : enemyHpFor(turn, cfg.hpMultiplier, this.random);
       const id = crypto.randomUUID().slice(0, 6);
-      this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, skin: this.enemySkin(id, size) });
+      this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, moyuValue: this.moyuValueForNewEnemy(), skin: this.enemySkin(id, size) });
       remaining -= cost;
       this.budgetBank -= cost;
       this.lastSpentBudget += cost;
       this.record({ type: 'enemy-spawned', subjectId: id, value: hp, message: `Curve spawned ${size}×${size} enemy hp ${hp} (T${turn})` });
     }
-    // 4) Rewards spawn independently of enemy budget.
-    this.spawnEndlessReward(turn);
+    // Currency is carried by enemies in Moyu Economy V2; never spawn RewardBalls.
   }
 
   /** Formula-driven reward ball: chance decays ~85%→65%; bad-luck protection after 2 dry turns. */
@@ -399,7 +638,7 @@ export class TurnManager {
     if (!cfg.automaticEnemySpawning) return;
     const turn = this.state.turn;
     // 1) Refresh the standard-player cumulative expected reward (turns 1..T).
-    this.cumulativeExpectedGeneratedV2 = cumulativeExpectedGeneratedReward(turn, this.finalRewardSpawnChance(), cfg.maxNaturalSpawnValue, this.rewardWeightOptions());
+    this.cumulativeExpectedGeneratedV2 = cumulativeExpectedMoyuValue(turn, this.moyuCarrierChance(), this.moyuStages());
     // 2) Accrue enemy HP budget for this turn.
     const income = hpIncomeBudget(turn, this.cumulativeExpectedGeneratedV2, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate);
     this.lastIncomeHpBudgetV2 = income;
@@ -437,14 +676,13 @@ export class TurnManager {
         : normalEnemyHp(turn, this.cumulativeExpectedGeneratedV2, this.random, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate);
       const hp = Math.max(1, Math.round(rawHp * REWARD_ECONOMY_TEST_CONTROLS.enemyHpMultiplier));
       const id = crypto.randomUUID().slice(0, 6);
-      this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, skin: this.enemySkin(id, size) });
+      this.state.enemies.push({ id, ...placement, width: size, height: size, hp, maxHp: hp, moyuValue: this.moyuValueForNewEnemy(), skin: this.enemySkin(id, size) });
       remaining -= cost;
       this.hpBudgetBankV2 -= cost;
       this.lastSpentHpBudgetV2 += cost;
       this.record({ type: 'enemy-spawned', subjectId: id, value: hp, message: `Economy spawned ${size}×${size} enemy hp ${hp} (T${turn})` });
     }
-    // 4) Rewards: high frequency + bad-luck protection.
-    this.spawnRewardEconomyBall(turn);
+    // Currency is carried by enemies in Moyu Economy V2; never spawn RewardBalls.
   }
 
   /** V2 reward: ~80% chance per turn, forced after `rewardForceAfterDryTurns` dry turns. */
@@ -474,9 +712,13 @@ export class TurnManager {
   rewardEconomyDiagnostics() {
     const cfg = REWARD_ECONOMY_CURVE_V2;
     const turn = Math.max(1, this.state.turn);
-    const finalRewardSpawnChance = this.finalRewardSpawnChance();
+    // Retained solely for legacy diagnostic fields while the panel migrates to
+    // Moyu labels; it is not used by the active enemy-budget calculation.
     const options = this.rewardWeightOptions();
-    const cumExpected = cumulativeExpectedGeneratedReward(turn, finalRewardSpawnChance, cfg.maxNaturalSpawnValue, options);
+    const carrierChance = this.moyuCarrierChance();
+    const stages = this.moyuStages();
+    const activeMoyuStage = [...stages].reverse().find(stage => turn >= stage.startTurn) ?? stages[0];
+    const cumExpected = cumulativeExpectedMoyuValue(turn, carrierChance, stages);
     const expectedPower = expectedPlantPower(turn, cumExpected, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate);
     const factor = difficultyFactor(turn);
     const income = expectedPower * factor;
@@ -486,7 +728,7 @@ export class TurnManager {
       rewardWeights: Object.fromEntries(rewardValueWeights(turn, cfg.maxNaturalSpawnValue, options)),
       rewardAlpha: +rewardWeightAlpha(turn, options).toFixed(3),
       singleRewardExpected: +expectedSingleRewardValue(turn, cfg.maxNaturalSpawnValue, options).toFixed(2),
-      expectedGeneratedThisTurn: +expectedRewardPerTurn(turn, finalRewardSpawnChance, cfg.maxNaturalSpawnValue, options).toFixed(2),
+      expectedGeneratedThisTurn: +expectedMoyuValueForTurn(turn, carrierChance, stages).toFixed(2),
       expectedGeneratedCumulative: +cumExpected.toFixed(1),
       expectedPlantPower: +expectedPower.toFixed(1),
       difficultyFactor: +factor.toFixed(3),
@@ -508,7 +750,9 @@ export class TurnManager {
       baselineCaptureRate: REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate,
       rewardProgression: REWARD_ECONOMY_TEST_CONTROLS.rewardProgression,
       highValueBias: REWARD_ECONOMY_TEST_CONTROLS.highValueBias,
-      finalRewardSpawnChance: +finalRewardSpawnChance.toFixed(2),
+      finalRewardSpawnChance: +carrierChance.toFixed(2),
+      moyuCarrierChance: +carrierChance.toFixed(2),
+      moyuStageValues: activeMoyuStage.values,
     };
   }
   /** Immediately discard excess old bank when a tester lowers Enemy Volume. */
@@ -516,7 +760,7 @@ export class TurnManager {
     if (this.mode !== 'reward-economy') return;
     const cfg = REWARD_ECONOMY_CURVE_V2;
     const turn = Math.max(1, this.state.turn);
-    const expected = cumulativeExpectedGeneratedReward(turn, this.finalRewardSpawnChance(), cfg.maxNaturalSpawnValue, this.rewardWeightOptions());
+    const expected = cumulativeExpectedMoyuValue(turn, this.moyuCarrierChance(), this.moyuStages());
     const theoretical = hpIncomeBudget(turn, expected, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate);
     this.lastIncomeHpBudgetV2 = theoretical;
     this.lastEffectiveIncomeHpBudgetV2 = theoretical * REWARD_ECONOMY_TEST_CONTROLS.enemyVolumeMultiplier;
@@ -557,11 +801,10 @@ export class TurnManager {
     const safety: SpawnSafetyRecord = { kind, outcome: hp >= 1 ? 'spawned' : 'rejected', reason: hp >= 1 ? undefined : (maxByUtilization < 1 ? 'requiredUtilization' : 'hardPressureCap'), hp: Math.max(0, hp), ...placement, width: size, height: size, remainingTurns, relevantLanePower, requiredUtilization, batchPressure, predictedPressureRatio };
     if (hp < 1 || requiredUtilization > maxUtilization || predictedPressureRatio > this.rules.hardPressureCap) { this.rejectSpawn(safety); return false; }
     const id = crypto.randomUUID().slice(0, 6);
-    const enemy = { id, ...placement, width: size, height: size, hp, maxHp: hp, skin: this.enemySkin(id, size) };
+    const enemy = { id, ...placement, width: size, height: size, hp, maxHp: hp, moyuValue: this.moyuValueForNewEnemy(), skin: this.enemySkin(id, size) };
     this.state.enemies.push(enemy);
     this.state.spawnSafety.push(safety);
     this.record({ type: 'enemy-spawned', subjectId: id, value: hp, requiredUtilization, predictedPressureRatio, message: `Wave spawned ${size}×${size} enemy hp ${hp}` });
-    if (this.rules.rewardSpawning) this.spawnRewardWithEnemy(enemy);
     return true;
   }
   private rejectSpawn(safety: SpawnSafetyRecord) {
@@ -621,7 +864,7 @@ export class TurnManager {
     // state.rewardRealized[i] corresponds to turn i+1; window covers turns [windowStart, turn].
     const realized = this.state.rewardRealized.slice(windowStart - 1, this.state.turn).reduce((sum, v) => sum + (v ?? 0), 0);
     const turnSafe = Math.max(1, this.state.turn);
-    const cumExpected = cumulativeExpectedGeneratedReward(turnSafe, this.finalRewardSpawnChance(), REWARD_ECONOMY_CURVE_V2.maxNaturalSpawnValue, this.rewardWeightOptions());
+    const cumExpected = cumulativeExpectedMoyuValue(turnSafe, this.moyuCarrierChance(), this.moyuStages());
     const expectedPower = expectedPlantPower(turnSafe, cumExpected, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate);
     const factor = difficultyFactor(turnSafe);
     const metric: TurnMetrics = {
@@ -643,6 +886,20 @@ export class TurnManager {
       hpIncomeBudget: +(expectedPower * factor).toFixed(1),
       hpBudgetBank: +this.hpBudgetBankV2.toFixed(1),
       normalEnemyTargetHp: +(normalEnemyTargetHp(turnSafe, cumExpected, REWARD_ECONOMY_TEST_CONTROLS.baselineCaptureRate)).toFixed(1),
+      totalProjectileDamagePotential: this.currentMetrics.theoreticalDamage,
+      enemyDamageDealt: this.currentMetrics.effectiveEnemyDamage,
+      overkillWaste: this.currentMetrics.overkillWaste,
+      moyuInterceptWaste: this.currentMetrics.moyuInterceptWaste,
+      moyuCollectedValue: this.currentMetrics.moyuCollectedValue,
+      moyuPickupCount: this.currentMetrics.moyuPickupCount,
+      autoRecoveredMoyuValue: this.currentMetrics.autoRecoveredMoyuValue,
+      currentMoyu: this.state.moyuBank,
+      moyuCapacity: this.moyuCapacity(),
+      highestDefenderValue: this.state.highestDefenderValue,
+      totalMoyuGenerated: this.state.totalMoyuGenerated,
+      totalMoyuEarned: this.state.totalMoyuEarned,
+      totalMoyuExtracted: this.state.totalMoyuExtracted,
+      totalMoyuOverflow: this.state.totalMoyuOverflow,
     };
     this.state.metrics.push(metric);
     if (this.cfg.metricsLogging) console.info('[Difficulty metrics]', metric);
@@ -660,6 +917,46 @@ export class TurnManager {
     this.laneSpawnHistory = this.laneSpawnHistory.filter(entry => entry.turn >= Math.max(1, this.state.turn - 9));
     if (event.type === 'enemy-spawned') this.recentEnemyLaneAnchors = [...this.recentEnemyLaneAnchors, entity.row].slice(-2);
   }
-  projectileCount(value: number) { return Math.min(value, 4); }
+  projectileCount(_value: number) { return 1; }
   snapshot() { return clone(this.state); }
+  /** Export only stable logic state; projectiles and animation state are intentionally absent. */
+  exportRunSnapshot(): TurnManagerRunSnapshot {
+    return clone({
+      state: this.state,
+      runtime: {
+        budgetBank: this.budgetBank,
+        rewardDryTurns: this.rewardDryTurns,
+        lastSpentBudget: this.lastSpentBudget,
+        hpBudgetBankV2: this.hpBudgetBankV2,
+        cumulativeExpectedGeneratedV2: this.cumulativeExpectedGeneratedV2,
+        dryRewardTurnsV2: this.dryRewardTurnsV2,
+        lastSpentHpBudgetV2: this.lastSpentHpBudgetV2,
+        lastIncomeHpBudgetV2: this.lastIncomeHpBudgetV2,
+        lastEffectiveIncomeHpBudgetV2: this.lastEffectiveIncomeHpBudgetV2,
+        lastAllowedSpendHpBudgetV2: this.lastAllowedSpendHpBudgetV2,
+        lastMaxHpBudgetBankV2: this.lastMaxHpBudgetBankV2,
+        laneSpawnHistory: this.laneSpawnHistory,
+        recentEnemyLaneAnchors: this.recentEnemyLaneAnchors,
+      },
+    });
+  }
+  /** Restore a previously validated stable snapshot without restoring any visuals. */
+  restoreRunSnapshot(snapshot: TurnManagerRunSnapshot) {
+    const saved = clone(snapshot);
+    this.state = saved.state;
+    this.budgetBank = saved.runtime.budgetBank;
+    this.rewardDryTurns = saved.runtime.rewardDryTurns;
+    this.lastSpentBudget = saved.runtime.lastSpentBudget;
+    this.hpBudgetBankV2 = saved.runtime.hpBudgetBankV2;
+    this.cumulativeExpectedGeneratedV2 = saved.runtime.cumulativeExpectedGeneratedV2;
+    this.dryRewardTurnsV2 = saved.runtime.dryRewardTurnsV2;
+    this.lastSpentHpBudgetV2 = saved.runtime.lastSpentHpBudgetV2;
+    this.lastIncomeHpBudgetV2 = saved.runtime.lastIncomeHpBudgetV2;
+    this.lastEffectiveIncomeHpBudgetV2 = saved.runtime.lastEffectiveIncomeHpBudgetV2;
+    this.lastAllowedSpendHpBudgetV2 = saved.runtime.lastAllowedSpendHpBudgetV2;
+    this.lastMaxHpBudgetBankV2 = saved.runtime.lastMaxHpBudgetBankV2;
+    this.laneSpawnHistory = saved.runtime.laneSpawnHistory;
+    this.recentEnemyLaneAnchors = saved.runtime.recentEnemyLaneAnchors;
+    this.pendingMoyuDrops = [];
+  }
 }

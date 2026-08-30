@@ -16,16 +16,16 @@ explicit user decision and matching test updates.
 
 - R007: An enemy entering the defense area immediately ends the game; there are no player lives or leak damage.
 - R008: Plant values are powers of two. Art currently covers 1–8192; game logic has no hard value cap and uses the 8192 appearance above that.
-- R009: A plant fires `min(value, 4)` projectiles, each dealing `value / projectileCount` damage.
+- R009: Each attacking Defender fires exactly one Projectile per turn. Projectile damage equals the Defender value; a value of 512 creates one Projectile with 512 damage, not four split projectiles.
 - R010: Projectiles pierce enemies using their remaining damage.
-- R011: A projectile hitting a reward ball captures the ball and is fully consumed; no remaining damage continues.
+- R011: A Projectile hitting a MoyuPickup captures it and is fully consumed; no remaining damage continues.
 - R012: Every plant fires each turn, not only a plant involved in the operation.
 
-## R013–R016: Reward balls and birth slot
+## R013–R016: Legacy RewardBall and birth slot
 
-- R013: The birth slot starts empty. Only a projectile capture may write to it; captures update it as a max register across the turn.
-- R014: Equal/lower captures do not merge, lower, or clear the birth slot.
-- R015: The player may leave the birth slot unused across turns.
+- R013: The birth slot starts empty. In Moyu Economy V2 it is filled only by active extraction from Moyu Bank, not by enemy death or pickup capture.
+- R014: The birth slot may hold only one extracted Defender. While non-empty, another extraction is forbidden; there is no overwrite, max-register update, automatic merge, or automatic replacement.
+- R015: Extraction does not consume a turn. Deploying the extracted Defender, or merging it with an equal board value, follows the existing legal-operation turn rule.
 - R016: In `REWARD_ECONOMY_CURVE_V2`, natural RewardBalls unlock by Turn:
   1 (T1–20), 1/2 (T21–40), 1/2/4 (T41–60), then 1/2/4/8 (T61+, hard cap 8).
   Dynamic progress-based weights apply only inside the unlocked set. In legacy
@@ -38,8 +38,29 @@ explicit user decision and matching test updates.
 - R019: The default score mode is actual HP damage: one point per damage dealt.
 - R020: Enemy and RewardBall footprints may never overlap with any Enemy or RewardBall footprint. A spawn or advance whose full footprint is occupied is skipped/held rather than forced.
 - R021: The renderer replays combat events in order: projectile impact, hit feedback, HP update, then death/removal. It must not show final HP or remove an enemy early, and the projectile impact must use the same grid-to-world coordinate as the enemy.
-- R022: Reward generation does not grant a birth-slot plant. A reward ball remains in the battlefield until a projectile hits and captures it; only then may the slot update by Max Register.
-- R023: A RewardBall is a 1×1 battlefield unit: it spawns at the last column, moves with the enemy phase, blocks and consumes the entire projectile that captures it, but has no HP and never causes Game Over.
+- R022 (legacy RewardBall): Reward generation does not grant a birth-slot plant. A reward ball remains in the battlefield until a projectile hits and captures it; only then may the slot update by Max Register. Moyu Economy V2 supersedes this path with Moyu Bank and active extraction.
+- R023 (legacy RewardBall): A RewardBall is a 1×1 battlefield unit: it spawns at the last column, moves with the enemy phase, blocks and consumes the entire projectile that captures it, but has no HP and never causes Game Over. Moyu Economy V2 uses `MoyuPickup` dropped by defeated carriers instead.
+
+## R024–R034: Moyu Economy V2
+
+- R024: A legal Enemy may carry `moyuValue` of 0 or a power of two. The carrier rate and value-growth table are configuration, not enemy-type guarantees.
+- R025: When a carried-value Enemy dies, it creates exactly one pending MoyuPickup at its death position if `moyuValue > 0`, then clears the carrier value to prevent duplicate drops. Death does not directly increase Moyu Bank.
+- R026: Pending MoyuPickups are spawned only after every Projectile in the current attack phase has completed combat resolution. The Projectile that killed the carrier cannot immediately collect the newly created pickup.
+- R027: MoyuPickup is a 1×1 battlefield entity. It does not attack, has no HP, does not cause Game Over, and cannot overlap Enemy or another MoyuPickup footprint.
+- R028: A MoyuPickup moves with the enemy movement phase, using the existing battlefield movement rules. If it reaches the recovery boundary, it is automatically recovered into Moyu Bank and must not be lost.
+- R029: Any Projectile can collect any MoyuPickup regardless of Projectile damage, remaining damage, or pickup value. No damage threshold or pickup HP exists.
+- R030: On collection, the pickup is marked collected exactly once; its value is added to Moyu Bank immediately, the Projectile remaining damage is set to zero, and the Projectile is destroyed. The later fly-to-bank animation is visual only and cannot add value again.
+- R031: Interrupted pickup animations, cleanup, turn transitions, and duplicate collision callbacks must preserve the same one-time bank result. A dropped Moyu value may be delayed but may never be permanently lost.
+- R032: A Projectile ending because it collected Moyu records its pre-collision remaining damage as `MoyuInterceptWaste`; that remainder must not also be counted as `OverkillWaste`.
+- R033: The combat economy records Projectile count and damage potential, Enemy damage, OverkillWaste, MoyuInterceptWaste, MoyuCollectedValue, pickup count, and AutoRecoveredMoyuValue independently.
+- R034: Moyu Economy V2 generation stages are configurable and default to: T1–15 values 1/2/4, T16–35 values 2/4/8, T36–60 values 4/8/16, T61–100 values 8/16/32, and T101+ values 16/32/64, with default low/mid/high weights 20%/55%/25% and `moyuCarrierChance = 0.80`.
+
+## R035–R038: Moyu capacity and product persistence
+
+- R035: Moyu Bank capacity is `clamp(highestDefenderValue / 4, 1, 32)`, where `highestDefenderValue` is the historical maximum reached in the run and never decreases after a merge or move.
+- R036: A collected or auto-recovered MoyuPickup credits only the remaining Bank capacity. The remainder is immediately lost and recorded as overflow; it is never queued, auto-extracted, or deferred.
+- R037: Extraction remains a no-Turn action and removes the highest affordable power of two, up to 4096. It records the extracted value but is forbidden while the Spawn Slot is occupied.
+- R038: A non-ended run is saved at stable logic points and may resume locally. Game Over and an explicit restart are never resumable. The local Top 10 stores summaries only and has no network component.
 
 ## Explicitly out of scope
 

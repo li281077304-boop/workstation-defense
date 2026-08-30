@@ -16,6 +16,18 @@
 - 本轮明确不制作美术、不改地图、不改实时性、不改基础伤害，不引入火冰雷、Boss、技能树或局外成长。
 - 旧 RewardBall 经济将先安全停用而非立即删除；待新 Moyu 系统完成并回归后，再处理遗留代码。
 
+## 2026-08-30 — Moyu Economy V2 规则锁定（文档）
+
+- 将攻击规则切换为“每个 Defender 每 Turn 单发”：Projectile 数量固定为 1，Projectile
+  Damage 等于 Defender Value，取消按 Value 拆分多发的旧解释。
+- 将经济循环定义为“资本怪携带摸鱼值 → 死亡后生成 MoyuPickup → 后续 Projectile 截弹回收
+  → Moyu Bank → 玩家主动提取 → Spawn Slot”。本轮不改变核心 Turn、合成和数值伤害规则。
+- 明确 pending drop 延迟到本轮全部 Projectile 结算后生成；任意 Projectile 均可回收，不设伤害门槛；
+  截弹剩余伤害只计入 MoyuInterceptWaste，不与 OverkillWaste 重复统计。
+- 明确边界自动回收、动画中断安全、重复碰撞幂等、Bank 提取不耗 Turn、槽非空禁止提取。
+- 旧 RewardBall/自然生成/出生槽 Max Register 文档路径保留为历史参考，具体过时项见
+  `docs/MOYU_ECONOMY_V2_IMPLEMENTATION_NOTES.md`。
+
 ---
 
 ## 2026-08-29 — 独立原创游戏仓库建立
@@ -165,3 +177,16 @@
 - 修两 bug：背景图图层遮挡（背景垫底）；开局太满（改空棋盘 + 出生槽=1）。
 
 **验证**：测试 14→15；build 通过。
+
+---
+
+## 2026-08-30 — V0.26：摸鱼容量 + 产品化基础
+
+**做了什么**
+
+- 摸鱼账户改为由本局历史最高办公用品决定容量：`max(highest / 4, 1)`，最高 32；账户满额时新增溢出账本和反馈。
+- 新增版本化本地设置、统一音频管理器（BGM 槽位 + 静默降级 SFX）与本地 Top 10 战绩。
+- 自动存档升级到 V2，并兼容迁移 V1 存档；继续保存完整逻辑局面与刷怪导演状态。
+- 战斗页补入暂停、设置、战绩和结算面板；Debug 入口改为 1.5 秒内连点分数三次。
+
+**验证**：92 条自动测试通过；Production Build 通过。
