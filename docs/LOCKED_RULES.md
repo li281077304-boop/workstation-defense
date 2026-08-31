@@ -8,7 +8,7 @@ explicit user decision and matching test updates.
 - R001: The game is endless; it has no levels.
 - R002: The defense board is exactly 2 columns by 5 rows; Defenders may occupy only it.
 - R003: The battlefield is exactly 10 columns by 5 rows for enemies, reward balls, projectiles, and effects.
-- R004: A legal move, swap, merge, birth-slot placement, or legal birth-slot merge consumes one turn. Illegal/cancelled actions consume none.
+- R004: A legal move, swap, merge, birth-slot placement, legal birth-slot merge, or successful Defender dismissal consumes one turn. Illegal/cancelled actions consume none.
 - R005: A turn resolves: player operation; post-operation board; all Defenders fire; projectiles resolve; surviving enemies move left one cell; world stops.
 - R006: Without a player operation, the world does not advance.
 
@@ -61,6 +61,13 @@ explicit user decision and matching test updates.
 - R036: A collected or auto-recovered MoyuPickup credits only the remaining Bank capacity. The remainder is immediately lost and recorded as overflow; it is never queued, auto-extracted, or deferred.
 - R037: Extraction remains a no-Turn action and removes the highest affordable power of two from the current Moyu Bank. Because Bank capacity is capped at 32, current extraction cannot exceed 32. It records the extracted value but is forbidden while the Spawn Slot is occupied.
 - R038: A non-ended run is saved at stable logic points and may resume locally. Game Over and an explicit restart are never resumable. The local Top 10 stores summaries only and has no network component.
+
+## R039–R042: Defender dismissal and Moyu debt
+
+- R039: A board Defender may be dragged into the separate Dismiss Slot. It is removed only when the operation is valid, costs exactly `Defender value × 2` Moyu, and consumes one turn. The Spawn Slot cannot be dismissed.
+- R040: Moyu Bank is the only account and may enter debt down to `-4096`. A dismissal that would produce a lower balance is rejected atomically: no Defender is removed, no Moyu changes, and no turn is consumed.
+- R041: Pickup income always applies to the same Moyu Bank, so it repays debt before the balance becomes positive. Extraction remains unavailable unless the Bank is positive and the Spawn Slot is empty.
+- R042: The account ledger remains auditable: `Total Moyu Earned = Total Moyu Extracted + Total Moyu Dismissal Cost + Current Moyu Bank`.
 
 ## Explicitly out of scope
 

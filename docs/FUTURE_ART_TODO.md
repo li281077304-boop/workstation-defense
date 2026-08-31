@@ -11,84 +11,31 @@ while preserving the identity of the underlying object.
 
 Requirements:
 
-- Anthropomorphize the office supplies without making them plants, beans, or
-  weapon replicas.
-- Give each unit a clear personality through expression, posture, accessories,
-  or small readable gestures.
-- Preserve instant recognition of the base item at small in-game sizes.
-- Make higher tiers feel like a visible growth path, not merely a larger or
-  brighter copy.
-- Keep the existing power-of-two semantic chain unless a separate gameplay
-  decision explicitly changes it.
-- Use original silhouettes, materials, effects, and animation language. Take
-  only the general design principle that a functional unit can also be a
-  character; do not copy any third-party character, plant, zombie, animation,
-  or UI design.
-- Validate every new asset through the existing source → candidate → selected
-  → production → manifest pipeline before runtime use.
+- Anthropomorphize the office supplies without making them plants, beans, or weapon replicas.
+- Give each unit a clear personality through expression, posture, accessories, or readable gestures.
+- Preserve instant recognition at small in-game sizes and make higher tiers feel like a growth path.
+- Use original silhouettes, materials, effects, and animation language. Only the general principle that a functional unit can also be a character may be learned from other works; do not copy any third-party character, plant, zombie, animation, or UI design.
+- Validate every new asset through source → candidate → selected → production → manifest before runtime use.
 
-Initial design pass to plan later: 1, 8, 32, 128, 512, and 4096 as anchor
-tiers, then fill the intervening tiers after the visual language is approved.
-Do not batch-generate all 13 tiers before these anchors are reviewed.
+Initial anchor tiers: 1, 8, 32, 128, 512, and 4096. Do not batch-generate all 13 tiers before the style is reviewed.
+
+V0.34 adds two review-only samples: Value 4 small fan and Value 8 thermos. They remain `ART CANDIDATE / REVIEW` until explicitly selected; normal runtime and Production assets stay unchanged.
 
 ## 2. Formal Enemy Art — Capital Pressure Characters
 
-Replace temporary experience enemy visuals in a later art pass with original,
-characterful representations of workplace pressure:
+Replace temporary experience enemy visuals in a later art pass with original, characterful workplace pressure: KPI/performance metrics, meetings, approvals, reports, overtime, cost cutting, forced competitiveness, ranking, and replacement pressure.
 
-- KPI / performance metrics
-- meetings and calendar pressure
-- approvals and paperwork
-- reports and status tracking
-- overtime systems
-- cost cutting / “efficiency” pressure
-- forced competitiveness and ranking
-- elimination / replacement pressure
-
-Design goals:
-
-- Enemies should be funny, recognizable, and emotionally satisfying to defeat.
-- Each archetype needs a distinct silhouette and behavior-readable visual
-  language, without implying mechanics that do not exist.
-- Visual skin must remain decoupled from HP, damage, speed, and footprint unless
-  a future gameplay specification explicitly introduces that relationship.
-- Preserve current logical enemy types and 2×2 handling during the art-only
-  replacement.
-- Do not use zombies, aliens, or recognizable third-party characters as the
-  formal direction.
-
-The current temporary enemy art remains explicitly `TEMP / EXPERIENCE ONLY`
-until an approved production set is ingested.
+Enemies should be funny, recognizable, and satisfying to defeat. Their skins must remain decoupled from HP, damage, speed, and footprint unless a future gameplay specification changes that relationship. Do not use zombies, aliens, or recognizable third-party characters as the formal direction.
 
 ## 3. Formal Office Battlefield Background
 
-Create and approve a production office-ground battlefield background after the
-runtime placement and lighting have been validated.
+Create and approve a production office-ground battlefield background only after runtime placement and lighting are validated. It should be a readable night office/open-plan passage with warm work lights, monitor glow, and a city-night view, while keeping the 2×5 Defender area, 10×5 battlefield, safe areas, and Spawn Slot owned by runtime/UI. Use environmental perspective and furniture depth, not a real 3D camera or altered logic coordinates.
 
-Direction:
-
-- Night office / open-plan workplace with warm work lights, monitor glow, and
-  a readable city-night window view.
-- The playable area should read as an office floor or passage, not a desktop
-  and not a flat spreadsheet.
-- Keep the 2×5 Defender area and 10×5 battlefield visually connected while
-  leaving the logical grid, lanes, safe areas, and Spawn Slot to runtime/UI.
-- Use environmental perspective, floor seams, contact lighting, and furniture
-  depth to support the pseudo-2.5D placement system; do not introduce a real
-  3D camera or alter logical coordinates.
-- Keep the play area visually calm enough that Defender, Enemy, Projectile, and
-  Moyu assets remain the focus.
-- Extend background art into wide-screen and notch regions where safe, without
-  placing interactive content outside the gameplay safe area.
-
-Production background acceptance requires a source file, repeatable build or
-crop step, manifest lineage, runtime mapping, and asset validation. Until then,
-the existing temporary/review scene and missing-production status must remain
-honest.
+Production background acceptance requires source, repeatable build/crop, manifest lineage, runtime mapping, and asset validation. Until then, the temporary/review scene remains honestly marked as such.
 
 ## Status
 
-- [ ] Approve Defender Art V2 anchor-tier style
+- [ ] Approve Defender Art V2 anchor-tier style (Value 4 fan / Value 8 thermos candidates are ready for review)
 - [ ] Produce and review characterized Defender candidates
 - [ ] Design formal Capital Pressure enemy candidate set
 - [ ] Approve formal enemy production set

@@ -25,9 +25,11 @@ export interface KeyValueStorage {
   removeItem(key: string): void;
 }
 
-export const CURRENT_RUN_SAVE_VERSION = 2;
-export const CURRENT_RUN_SAVE_KEY = 'workstation-defense.current-run.v2';
+export const CURRENT_RUN_SAVE_VERSION = 3;
+export const CURRENT_RUN_SAVE_KEY = 'workstation-defense.current-run.v3';
 export const CURRENT_RUN_SAVE_TEMP_KEY = `${CURRENT_RUN_SAVE_KEY}.pending`;
+export const V2_CURRENT_RUN_SAVE_KEY = 'workstation-defense.current-run.v2';
+export const V2_CURRENT_RUN_SAVE_TEMP_KEY = `${V2_CURRENT_RUN_SAVE_KEY}.pending`;
 /** V0.25's storage keys remain readable exactly once through the V1 migrator. */
 export const LEGACY_CURRENT_RUN_SAVE_KEY = 'workstation-defense.current-run.v1';
 export const LEGACY_CURRENT_RUN_SAVE_TEMP_KEY = `${LEGACY_CURRENT_RUN_SAVE_KEY}.pending`;
@@ -64,19 +66,19 @@ const isBaseResumableGameState = (value: unknown): value is Record<string, unkno
   ];
   if (!requiredArrays.every(Array.isArray)) return false;
 
-  if (!isFiniteNumber(value.moyuBank) || value.moyuBank < 0) return false;
+  if (!isFiniteNumber(value.moyuBank) || value.moyuBank < -4096) return false;
   if (value.birthSlot !== null && (!isFiniteNumber(value.birthSlot) || value.birthSlot < 1)) return false;
   return isFiniteNumber(value.score) && value.score >= 0 && isFiniteNumber(value.turn) && value.turn >= 0;
 };
 
-/** V2 has a complete, self-consistent capacity ledger. */
+/** V3 has a complete, self-consistent capacity/debt ledger. */
 export const isResumableGameState = (value: unknown): value is GameState => {
   if (!isBaseResumableGameState(value)) return false;
-  const ledger = ['highestDefenderValue', 'totalMoyuGenerated', 'totalMoyuEarned', 'totalMoyuExtracted', 'totalMoyuOverflow'];
+  const ledger = ['highestDefenderValue', 'totalMoyuGenerated', 'totalMoyuEarned', 'totalMoyuExtracted', 'totalMoyuDismissalCost', 'totalMoyuOverflow'];
   if (!ledger.every(key => isFiniteNumber(value[key]) && value[key] >= 0)) return false;
   const capacity = TurnManager.moyuCapacityFor(value.highestDefenderValue as number);
   return (value.moyuBank as number) <= capacity
-    && (value.totalMoyuEarned as number) === (value.totalMoyuExtracted as number) + (value.moyuBank as number);
+    && (value.totalMoyuEarned as number) === (value.totalMoyuExtracted as number) + (value.totalMoyuDismissalCost as number) + (value.moyuBank as number);
 };
 
 const isCurrentRunSave = <TRuntime>(value: unknown): value is CurrentRunSave<TRuntime> => {
@@ -106,6 +108,7 @@ const migrateV1Save = <TRuntime>(value: unknown): CurrentRunSave<TRuntime> | nul
     totalMoyuGenerated: moyuBank + migrationOverflow,
     totalMoyuEarned: moyuBank,
     totalMoyuExtracted: 0,
+    totalMoyuDismissalCost: 0,
     totalMoyuOverflow: migrationOverflow,
   };
   const migrated: CurrentRunSave<TRuntime> = {
@@ -113,6 +116,15 @@ const migrateV1Save = <TRuntime>(value: unknown): CurrentRunSave<TRuntime> | nul
     savedAt: value.savedAt,
     run: { state: migratedState, runtime: value.run.runtime as TRuntime },
   };
+  return isCurrentRunSave<TRuntime>(migrated) ? migrated : null;
+};
+
+/** V2 did not have dismissal debt; preserve its complete positive-bank ledger. */
+const migrateV2Save = <TRuntime>(value: unknown): CurrentRunSave<TRuntime> | null => {
+  if (!isObject(value) || value.saveVersion !== 2 || !isFiniteNumber(value.savedAt) || value.savedAt <= 0 || !isObject(value.run) || !Object.hasOwn(value.run, 'runtime') || !isBaseResumableGameState(value.run.state)) return null;
+  const state = structuredClone(value.run.state) as GameState;
+  const migratedState: GameState = { ...state, totalMoyuDismissalCost: 0 };
+  const migrated: CurrentRunSave<TRuntime> = { saveVersion: CURRENT_RUN_SAVE_VERSION, savedAt: value.savedAt, run: { state: migratedState, runtime: value.run.runtime as TRuntime } };
   return isCurrentRunSave<TRuntime>(migrated) ? migrated : null;
 };
 
@@ -130,7 +142,7 @@ const parseSave = <TRuntime>(raw: string | null): CurrentRunSave<TRuntime> | nul
   try {
     const parsed: unknown = JSON.parse(raw);
     if (isCurrentRunSave<TRuntime>(parsed)) return parsed;
-    return migrateV1Save<TRuntime>(parsed);
+    return migrateV2Save<TRuntime>(parsed) ?? migrateV1Save<TRuntime>(parsed);
   } catch {
     return null;
   }
@@ -186,6 +198,8 @@ export const loadCurrentRun = <TRuntime>(
     const candidates = [
       parseSave<TRuntime>(storage.getItem(CURRENT_RUN_SAVE_KEY)),
       parseSave<TRuntime>(storage.getItem(CURRENT_RUN_SAVE_TEMP_KEY)),
+      parseSave<TRuntime>(storage.getItem(V2_CURRENT_RUN_SAVE_KEY)),
+      parseSave<TRuntime>(storage.getItem(V2_CURRENT_RUN_SAVE_TEMP_KEY)),
       parseSave<TRuntime>(storage.getItem(LEGACY_CURRENT_RUN_SAVE_KEY)),
       parseSave<TRuntime>(storage.getItem(LEGACY_CURRENT_RUN_SAVE_TEMP_KEY)),
     ].filter((candidate): candidate is CurrentRunSave<TRuntime> => candidate !== null);
@@ -200,6 +214,8 @@ export const clearCurrentRun = (storage: KeyValueStorage | null = defaultStorage
   try {
     storage.removeItem(CURRENT_RUN_SAVE_KEY);
     storage.removeItem(CURRENT_RUN_SAVE_TEMP_KEY);
+    storage.removeItem(V2_CURRENT_RUN_SAVE_KEY);
+    storage.removeItem(V2_CURRENT_RUN_SAVE_TEMP_KEY);
     storage.removeItem(LEGACY_CURRENT_RUN_SAVE_KEY);
     storage.removeItem(LEGACY_CURRENT_RUN_SAVE_TEMP_KEY);
   } catch {

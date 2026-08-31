@@ -2,6 +2,8 @@ import { BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, MAX_DEFENDER_VALUE, REWARD_
 import { cumulativeExpectedGeneratedReward, cumulativeExpectedMoyuValue, difficultyFactor, enemyHpFor, expectedMoyuValueForTurn, expectedPlantPower, expectedRewardPerTurn, expectedSingleRewardValue, hpIncomeBudget, largeEnemyChanceFor as curveLargeChance, largeEnemyHpFor, largeEnemyHpV2, normalEnemyHp, normalEnemyTargetHp, perTurnBudget, rewardChanceFor, rewardMaxByTurn, rewardMaxFor, rewardValueWeights, rewardWeightAlpha, type RewardWeightOptions } from './difficulty';
 import type { Enemy, GameState, Move, MoyuPickup, Plant, Projectile, RewardBall, SpawnSafetyRecord, TurnEvent, TurnMetrics } from './types';
 
+export const MOYU_DEBT_LIMIT = -4096;
+
 const key = (r: number, c: number) => `${r}:${c}`;
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -41,6 +43,7 @@ export function emptyState(): GameState {
     totalMoyuGenerated: 0,
     totalMoyuEarned: 0,
     totalMoyuExtracted: 0,
+    totalMoyuDismissalCost: 0,
     totalMoyuOverflow: 0,
     birthSlot: null, score: 0, turn: 0, gameOver: false, lastLog: [], events: [], metrics: [], rewardLedger: [], spawnSafety: [], rewardRealized: [],
   };
@@ -83,6 +86,10 @@ export class TurnManager {
     return Math.min(32, Math.max(1, Math.floor(safeHighest / 4)));
   }
 
+  static dismissalCostFor(value: number): number {
+    return Math.max(0, Math.floor(value)) * 2;
+  }
+
   /** Compatibility-safe single read path for carrier labels, drops, and tests. */
   static enemyMoyuValue(enemy: Pick<Enemy, 'moyuValue'>): number {
     return Math.max(0, Math.floor(enemy.moyuValue ?? 0));
@@ -118,18 +125,22 @@ export class TurnManager {
     this.state.highestDefenderValue = Math.max(1, Math.floor(candidate), this.liveHighestDefenderValue());
     this.state.totalMoyuGenerated = Math.max(0, Math.floor(this.state.totalMoyuGenerated ?? 0));
     this.state.totalMoyuExtracted = Math.max(0, Math.floor(this.state.totalMoyuExtracted ?? 0));
+    this.state.totalMoyuDismissalCost = Math.max(0, Math.floor(this.state.totalMoyuDismissalCost ?? 0));
     this.state.totalMoyuOverflow = Math.max(0, Math.floor(this.state.totalMoyuOverflow ?? 0));
-    this.state.moyuBank = Math.max(0, Math.floor(this.state.moyuBank ?? 0));
+    this.state.moyuBank = Math.max(MOYU_DEBT_LIMIT, Math.floor(this.state.moyuBank ?? 0));
     const capacity = TurnManager.moyuCapacityFor(this.state.highestDefenderValue);
     if (this.state.moyuBank > capacity) {
       this.state.totalMoyuOverflow += this.state.moyuBank - capacity;
       this.state.moyuBank = capacity;
     }
-    // V1 had no ledger. The only safe invariant at migration time is to begin
-    // the known ledger from current bank plus known extractions.
-    this.state.totalMoyuEarned = Math.max(this.state.moyuBank + this.state.totalMoyuExtracted, Math.floor(this.state.totalMoyuEarned ?? 0));
+    // Repair stale/debug-edited debt conservatively: an existing negative Bank
+    // implies at least enough prior dismissal cost to explain it. Normal runs
+    // always write this cost at dismissal time.
+    const recordedEarned = Math.max(0, Math.floor(this.state.totalMoyuEarned ?? 0));
+    const minimumDismissalCost = Math.max(0, recordedEarned - this.state.totalMoyuExtracted - this.state.moyuBank);
+    this.state.totalMoyuDismissalCost = Math.max(this.state.totalMoyuDismissalCost, minimumDismissalCost);
     // Preserve the accounting invariant even for stale/debug-edited saves.
-    this.state.totalMoyuEarned = this.state.moyuBank + this.state.totalMoyuExtracted;
+    this.state.totalMoyuEarned = this.state.moyuBank + this.state.totalMoyuExtracted + this.state.totalMoyuDismissalCost;
     this.state.totalMoyuGenerated = Math.max(this.state.totalMoyuGenerated, this.state.totalMoyuEarned + this.state.totalMoyuOverflow);
   }
 
@@ -186,7 +197,29 @@ export class TurnManager {
   }
 
   perform(move: Move): boolean {
-    if (this.state.gameOver || !this.applyMove(move)) return false;
+    return this.resolveLegalOperation(() => this.applyMove(move));
+  }
+
+  /** Remove a stuck Defender, pay its value × 2, and resolve exactly one Turn. */
+  dismissDefender(from: { row: number; col: number }): boolean {
+    let dismissedValue = 0;
+    const accepted = this.resolveLegalOperation(() => {
+      const defender = this.state.plants[from.row]?.[from.col];
+      if (!defender) return false;
+      const cost = TurnManager.dismissalCostFor(defender.value);
+      if (this.state.moyuBank - cost < MOYU_DEBT_LIMIT) return false;
+      dismissedValue = defender.value;
+      this.state.plants[from.row][from.col] = null;
+      this.state.moyuBank -= cost;
+      this.state.totalMoyuDismissalCost += cost;
+      return true;
+    });
+    if (accepted) this.record({ type: 'defender-dismissed', lane: from.row, col: from.col, value: dismissedValue, message: `Dismissed Defender ${dismissedValue}; spent ${TurnManager.dismissalCostFor(dismissedValue)} Moyu` });
+    return accepted;
+  }
+
+  private resolveLegalOperation(apply: () => boolean): boolean {
+    if (this.state.gameOver || !apply()) return false;
     this.state.turn++;
     this.state.lastLog = [];
     this.state.events = [];
@@ -914,6 +947,7 @@ export class TurnManager {
       totalMoyuGenerated: this.state.totalMoyuGenerated,
       totalMoyuEarned: this.state.totalMoyuEarned,
       totalMoyuExtracted: this.state.totalMoyuExtracted,
+      totalMoyuDismissalCost: this.state.totalMoyuDismissalCost,
       totalMoyuOverflow: this.state.totalMoyuOverflow,
     };
     this.state.metrics.push(metric);

@@ -28,7 +28,10 @@ type CombatVisualStart = { enemies: Enemy[]; moyuPickups: MoyuPickup[]; birthSlo
 type RunSummary = { score: number; turn: number; plantPower: number; firepowerUtilization: number; rewardCaptureRate: number; highestPlantValue: number; deathPressureRatio: number; lastTenEnemyCounts: number[] };
 
 /** Map plant value → standalone image key. */
+const isArtPrototypeReview = () => new URLSearchParams(window.location.search).get('visualReview') === 'art-v2';
 const PLANT_FRAME = (value: number): string => {
+  if (isArtPrototypeReview() && value === 4) return 'defender-4-v2-review';
+  if (isArtPrototypeReview() && value === 8) return 'defender-8-v2-review';
   const v = [...PLANT_VALUES].reverse().find(n => value >= n) ?? 1;
   return `defender-${v >= 8192 ? 4096 : v}`;
 };
@@ -68,6 +71,8 @@ const projectileVisualScale = (damage: number) => PROJECTILE_VISUAL_SCALE[[...PR
 /** Standalone image key → asset path (complete PNGs; placeholder art is fine). */
 const IMAGES: [string, string][] = [
   ...PLANT_VALUES.map<[string, string]>(v => [`defender-${v}`, ART.defenders[(v >= 8192 ? 4096 : v) as keyof typeof ART.defenders]]),
+  ['defender-4-v2-review', 'assets/candidates/defenders/defender_004_fan_v2_review.png'],
+  ['defender-8-v2-review', 'assets/candidates/defenders/defender_008_thermos_v2_review.png'],
   ['moyu-icon', ART.moyuIcon],
   ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
   ['enemy-contract', ART.enemies.contract],
@@ -117,7 +122,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private difficultyPanel: HTMLDivElement | null = null;
   private loadedRewardEconomyTestControls = false;
   private debugPanelHold: Phaser.Time.TimerEvent | null = null;
-  private breathingSprites: Array<{ sprite: Phaser.GameObjects.Sprite; baseScale: number; amplitude: number; period: number; phase: number }> = [];
+  private breathingSprites: Array<{ sprite: Phaser.GameObjects.Sprite; baseScaleX: number; baseScaleY: number; amplitude: number; period: number; phase: number }> = [];
   private runSummaries: RunSummary[] = [];
   private resumeChoice: Phaser.GameObjects.Container | null = null;
   private resumeChoiceBounds: { resume: Phaser.Geom.Rectangle; fresh: Phaser.Geom.Rectangle } | null = null;
@@ -138,9 +143,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     for (const breath of this.breathingSprites) {
       if (!breath.sprite.active) continue;
       const wave = Math.sin((now / breath.period) * Math.PI * 2 + breath.phase);
-      breath.sprite.y = wave * -breath.amplitude;
-      breath.sprite.scaleX = breath.baseScale * (1 - wave * 0.01);
-      breath.sprite.scaleY = breath.baseScale * (1 + wave * 0.015);
+      // Bottom-center sprites keep their contact point fixed: breathing changes
+      // only their body volume, never their Ground Point or contact shadow.
+      const strength = Math.min(.04, Math.max(.015, breath.amplitude * .007));
+      breath.sprite.y = 0;
+      breath.sprite.scaleX = breath.baseScaleX * (1 - wave * strength * .42);
+      breath.sprite.scaleY = breath.baseScaleY * (1 + wave * strength);
     }
   }
 
@@ -569,6 +577,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       this.dragGhost.x = x;
       this.dragGhost.y = y;
     }
+    this.setDismissSlotHighlight(this.selected !== 'birth' && this.isInDismissSlot(x, y));
     this.updateMergePreview(x, y);
   }
 
@@ -604,8 +613,63 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.mergePreview = preview;
   }
 
+  private dismissSlotBounds() {
+    return new Phaser.Geom.Rectangle(L.dismissSlot.left, L.dismissSlot.top, L.dismissSlot.width, L.dismissSlot.height);
+  }
+
+  private isInDismissSlot(x: number, y: number) {
+    return this.dismissSlotBounds().contains(x, y);
+  }
+
+  private setDismissSlotHighlight(active: boolean) {
+    const highlight = this.children.list.find((child): child is Phaser.GameObjects.Rectangle =>
+      child instanceof Phaser.GameObjects.Rectangle && child.getData('dismissSlotHighlight') === true,
+    );
+    highlight?.setAlpha(active ? .86 : .34);
+  }
+
+  /** UI owns only the visual hand-off; TurnManager owns the atomic dismissal rule. */
+  private dismissDraggedDefender(from: { row: number; col: number }, x: number, y: number) {
+    const defender = this.manager.state.plants[from.row]?.[from.col];
+    if (!defender) { this.cancelDrag(); this.render(); return; }
+    const cost = TurnManager.dismissalCostFor(defender.value);
+    const before = structuredClone(this.manager.state);
+    const capacityBefore = this.manager.moyuCapacity();
+    const accepted = this.manager.dismissDefender(from);
+    if (!accepted) {
+      this.cancelDrag();
+      this.render();
+      this.floatText(x, y - 36, '摸鱼透支已达上限', '#ffb2a1');
+      return;
+    }
+    const capacityAfter = this.manager.moyuCapacity();
+    if (capacityAfter > capacityBefore) this.pendingCapacityUpgrade = capacityAfter;
+    if (this.manager.state.gameOver) clearCurrentRun();
+    this.visualBirthSlot = before.birthSlot;
+    this.combatVisualStart = { enemies: before.enemies, moyuPickups: before.moyuPickups, birthSlot: before.birthSlot, moyuBank: before.moyuBank };
+    this.lastPlacement = null;
+    const ghost = this.dragGhost;
+    this.dragGhost = null;
+    this.selected = null;
+    this.mergePreview?.destroy();
+    this.mergePreview = null;
+    this.setDismissSlotHighlight(false);
+    this.animating = true;
+    const bounds = this.dismissSlotBounds();
+    const target = { x: bounds.centerX, y: bounds.centerY };
+    if (ghost) {
+      this.tweens.add({ targets: ghost, x: target.x, y: target.y, scale: .08, alpha: 0, duration: 150, ease: 'Quad.easeIn', onComplete: () => ghost.destroy() });
+    }
+    this.floatText(target.x, target.y - 28, `-${cost} 摸鱼`, '#ffb2a1');
+    this.time.delayedCall(155, () => { this.animating = false; this.animateTurn(); });
+  }
+
   private endDrag(x: number, y: number) {
     if (!this.selected || this.animating || this.manager.state.gameOver) return;
+    if (this.selected !== 'birth' && this.isInDismissSlot(x, y)) {
+      this.dismissDraggedDefender(this.selected, x, y);
+      return;
+    }
     const col = defenseColAt(x), row = rowAt(y);
     if (row < 0 || row >= BOARD.rows || col < 0) { this.cancelDrag(); return; }
     // Classify the move before perform() mutates the board.
@@ -649,6 +713,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.dragGhost = null;
     this.mergePreview?.destroy();
     this.mergePreview = null;
+    this.setDismissSlotHighlight(false);
   }
 
   /* ─── Animation pipeline ─── */
@@ -881,6 +946,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private animateOneFlight(f: Flight, done: () => void) {
     const startX = L.board.battlefieldLeft - 20;
     const y = TOP + f.lane * ROW + ROW / 2;
+    this.playDefenderAttack(f.sourcePlantId);
     const bullet = this.add.sprite(startX, y, f.frame).setDepth(RENDER_DEPTH.PROJECTILE + f.lane * 10);
     const scale = projectileVisualScale(Number(f.frame.split('-').at(-1)) || 1);
     fitSprite(bullet, 76 + scale * 66, 18 + scale * 38);
@@ -902,6 +968,24 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       });
     };
     step();
+  }
+
+  /** A compact shared attack gesture: brace, push toward the right, then recover. */
+  private playDefenderAttack(defenderId: string) {
+    const entity = this.children.list.find((child): child is Phaser.GameObjects.Container =>
+      child instanceof Phaser.GameObjects.Container && child.getData('defenderId') === defenderId,
+    );
+    if (!entity) return;
+    const groundX = entity.getData('groundX') as number ?? entity.x;
+    this.tweens.killTweensOf(entity);
+    this.tweens.add({
+      targets: entity,
+      x: groundX - 4,
+      scaleX: .98,
+      duration: 45,
+      ease: 'Sine.easeOut',
+      onComplete: () => this.tweens.add({ targets: entity, x: groundX + 13, scaleX: 1.045, duration: 75, ease: 'Quad.easeOut', yoyo: true, onComplete: () => entity.setPosition(groundX, entity.y).setScale(1, 1) }),
+    });
   }
 
   private fadeBullet(bullet: Phaser.GameObjects.Sprite, done: () => void) {
@@ -940,6 +1024,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     }
     // Plain hit / pierce: quick impact flash
     Sfx.hit();
+    if (subjectId) this.playEnemyHitFeedback(subjectId);
     const fx = this.add.sprite(x, y, 'effect-hit-green').setDepth(RENDER_DEPTH.FX + 20);
     fx.setDisplaySize(70, 70);
     this.tweens.add({ targets: fx, scale: 1.7, alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => fx.destroy() });
@@ -951,6 +1036,16 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private floatText(x: number, y: number, text: string, color: string) {
     const t = this.add.text(x, y, text, { fontSize: '34px', color, stroke: '#1a1a1a', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.FX + 40);
     this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => t.destroy() });
+  }
+
+  private playEnemyHitFeedback(enemyId: string) {
+    const entity = this.findEntity('enemyId', enemyId);
+    if (!entity) return;
+    const sprite = entity.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
+    if (!sprite) return;
+    const originX = entity.x;
+    sprite.setTintFill(0xffffff);
+    this.tweens.add({ targets: entity, x: originX - 8, scaleX: .94, scaleY: 1.05, duration: 55, yoyo: true, onComplete: () => { entity.x = originX; entity.setScale(1); sprite.clearTint(); } });
   }
 
   /** Logical position stays on the container; a frame-driven child offset never resets between turns. */
@@ -976,9 +1071,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const sprite = this.add.sprite(0, 0, frame);
     fitSprite(sprite, maxW, maxH);
     container.add(sprite);
-    const baseScale = sprite.scale;
+    const baseScaleX = sprite.scaleX;
+    const baseScaleY = sprite.scaleY;
     const phase = [...phaseKey].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 628, 0) / 100;
-    this.breathingSprites.push({ sprite, baseScale, amplitude: amp, period: duration * 2, phase });
+    const variation = 1400 + Math.round(phase * 125);
+    this.breathingSprites.push({ sprite, baseScaleX, baseScaleY, amplitude: amp, period: Math.min(2200, Math.max(1400, variation)), phase });
     return container;
   }
 
@@ -1298,7 +1395,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     if (ACTIVE_DIFFICULTY.mode === 'reward-economy') {
       const d = this.manager.rewardEconomyDiagnostics();
       const lanes = this.manager.laneDistributionDiagnostics();
-      economy = `<br><strong>Moyu Economy V2</strong><br>Current Moyu：${this.manager.state.moyuBank}<br>Moyu Capacity：${this.manager.moyuCapacity()}<br>Highest Defender：${this.manager.state.highestDefenderValue}<br>Total Moyu Generated：${this.manager.state.totalMoyuGenerated}<br>Total Moyu Earned：${this.manager.state.totalMoyuEarned}<br>Total Moyu Extracted：${this.manager.state.totalMoyuExtracted}<br>Total Moyu Overflow：${this.manager.state.totalMoyuOverflow}<br>实际 PlantPower：${last?.plantPower ?? 0}<br>Expected PlantPower：${d.expectedPlantPower}（标准回收 ${percent(d.baselineCaptureRate)}）<br>当前摸鱼值池：${d.moyuStageValues.join(' / ')} · Carrier Rate：${percent(d.moyuCarrierChance)}<br>每Turn Expected Moyu Value：${d.expectedGeneratedThisTurn} · 累计：${d.expectedGeneratedCumulative}<br>战场 Pickup：${this.manager.state.moyuPickups.length}<br>Projectile Potential：${theoretical} · Enemy Damage：${effective}<br>Moyu Intercept Waste：${total('moyuInterceptWaste')}（${theoretical ? percent(total('moyuInterceptWaste') / theoretical) : '—'}）<br>Enemy Count：${d.enemyCount} / ${d.enemyCountCap}<br>Lane Enemy Count (L1–L5)：${lanes.enemyCounts.join(' / ')}<br>最近10 Turn Spawn (L1–L5)：${lanes.recentEnemySpawns.join(' / ')}<br>当前 Budget Bank：${d.hpBudgetBank} / ${d.maxBudgetBank}`;
+      economy = `<br><strong>Moyu Economy V2</strong><br>Current Moyu：${this.manager.state.moyuBank}<br>Moyu Capacity：${this.manager.moyuCapacity()}<br>Highest Defender：${this.manager.state.highestDefenderValue}<br>Total Moyu Generated：${this.manager.state.totalMoyuGenerated}<br>Total Moyu Earned：${this.manager.state.totalMoyuEarned}<br>Total Moyu Extracted：${this.manager.state.totalMoyuExtracted}<br>Dismissal Cost：${this.manager.state.totalMoyuDismissalCost}<br>Total Moyu Overflow：${this.manager.state.totalMoyuOverflow}<br>实际 PlantPower：${last?.plantPower ?? 0}<br>Expected PlantPower：${d.expectedPlantPower}（标准回收 ${percent(d.baselineCaptureRate)}）<br>当前摸鱼值池：${d.moyuStageValues.join(' / ')} · Carrier Rate：${percent(d.moyuCarrierChance)}<br>每Turn Expected Moyu Value：${d.expectedGeneratedThisTurn} · 累计：${d.expectedGeneratedCumulative}<br>战场 Pickup：${this.manager.state.moyuPickups.length}<br>Projectile Potential：${theoretical} · Enemy Damage：${effective}<br>Moyu Intercept Waste：${total('moyuInterceptWaste')}（${theoretical ? percent(total('moyuInterceptWaste') / theoretical) : '—'}）<br>Enemy Count：${d.enemyCount} / ${d.enemyCountCap}<br>Lane Enemy Count (L1–L5)：${lanes.enemyCounts.join(' / ')}<br>最近10 Turn Spawn (L1–L5)：${lanes.recentEnemySpawns.join(' / ')}<br>当前 Budget Bank：${d.hpBudgetBank} / ${d.maxBudgetBank}`;
     }
     const firstReached = (value: number) => this.manager.state.metrics.find(metric => metric.highestPlantValue >= value)?.turn ?? '未达到';
     const stage = highest < 32 ? 'Early Game' : highest < 256 ? 'Mid Game' : highest < 512 ? 'Late Game' : 'Deep Endless';
@@ -1497,6 +1594,22 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     g.lineStyle(7, 0xb9d36c, .95).strokeRoundedRect(slot.left, slotTop, slot.width, slot.height, 28);
     g.lineStyle(2, 0x6d4a27, .9).strokeRoundedRect(slot.left + 10, slotTop + 10, slot.width - 20, slot.height - 20, 21);
 
+    // Dismiss Slot is intentionally separate from the extraction/birth Slot.
+    // It is quiet until a board Defender is dragged over it.
+    const dismiss = this.dismissSlotBounds();
+    const dismissBase = this.add.rectangle(dismiss.x, dismiss.y, dismiss.width, dismiss.height, 0x3c2427, .82)
+      .setOrigin(0).setDepth(RENDER_DEPTH.UI + 10).setStrokeStyle(3, 0xa86459, .78);
+    dismissBase.setData('dismissSlotBase', true);
+    const dismissHighlight = this.add.rectangle(dismiss.x + 6, dismiss.y + 6, dismiss.width - 12, dismiss.height - 12, 0x9e3f35, .34)
+      .setOrigin(0).setDepth(RENDER_DEPTH.UI + 11).setStrokeStyle(3, 0xffad91, .86);
+    dismissHighlight.setData('dismissSlotHighlight', true);
+    this.add.text(dismiss.centerX, dismiss.y + 35, '解雇槽', { fontSize: '25px', color: '#ffd5c5', stroke: '#3a1618', strokeThickness: 5, fontStyle: 'bold' })
+      .setOrigin(.5).setDepth(RENDER_DEPTH.UI + 12);
+    this.add.text(dismiss.centerX, dismiss.y + 76, '拖入解雇', { fontSize: '17px', color: '#f1b9a5', stroke: '#3a1618', strokeThickness: 3 })
+      .setOrigin(.5).setDepth(RENDER_DEPTH.UI + 12);
+    this.add.text(dismiss.centerX, dismiss.y + 108, '成本：单位值 × 2', { fontSize: '14px', color: '#d0a39a' })
+      .setOrigin(.5).setDepth(RENDER_DEPTH.UI + 12);
+
     // UI text
     this.add.text(960, L.header.scoreY, `分数 ${s.score.toLocaleString()}`, { fontSize: '46px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 8 }).setOrigin(.5, 0).setDepth(RENDER_DEPTH.UI);
     this.add.text(L.header.settingsX, 30, '⚙', { fontSize: '50px', color: '#e4efe8' }).setDepth(RENDER_DEPTH.UI);
@@ -1518,6 +1631,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
           placement.displayWidth, placement.displayHeight,
           placement.depth, 3, 700 + (r * 80 + c * 45), p.id, DEFENDER_META[p.value]
         );
+        entity.setData('defenderId', p.id);
+        entity.setData('groundX', placement.x);
         // 设置 bottom-center pivot (pivotY=1.0 = 脚底对齐 Ground Point)
         const sprite = entity.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
         if (sprite) sprite.setOrigin(placement.originX, placement.originY);

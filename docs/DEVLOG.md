@@ -233,3 +233,11 @@
 - 未找回可用办公室背景，生成一张原创办公室地面候选并通过 `build-background-assets.py` 建立 Source → Review Runtime 血缘；状态为 `PRODUCTION_CANDIDATE_REVIEW`，等待用户肉眼批准。
 - 扩展资产检查：验证 13 Defender、8 Enemy、来源 SHA、派生 SHA、运行时旧僵尸/乡村引用，以及候选背景的“有效但待批准”状态。
 - 验证：`npm run check:assets`、95 条测试和 Web Production Build 通过。Android Web 资源同步通过；使用本机现有的临时 Temurin JDK 21 成功构建 V0.33 Art Review APK（30,837,484 bytes，SHA-256 `2a1e48c4ec024143504312b4f52cc1b4bb9362a12a2e7c4d7ab88dceecfe60a2`）。
+
+## 2026-09-01 — V0.34 Dismiss + Character Motion + Android Build Stabilization
+
+- 新增独立“解雇槽”：拖入棋盘 Defender 会移除该单位、扣除其值 × 2 的摸鱼值，并按普通合法操作结算一个 Turn。
+- Moyu Bank 支持最低 `-4096` 的负债；后续拾取收入优先抵债。存档升级到 V3，并保留 V1/V2 自动迁移与完整账本校验。
+- Defender 统一接入错相呼吸和发射前压/回弹；Enemy 增加短暂闪白与受击压缩，均只影响表现层。
+- 保存 Value 4 小风扇、Value 8 保温杯两张角色化候选图以及可重复裁切脚本；它们只在 `?visualReview=art-v2` 评审模式出现，未覆盖正式素材。
+- 固化项目内 `npm run build:android`：自动发现系统注册的 Java 21，执行测试、Web 构建、Capacitor 同步、Gradle Debug 打包，并产出 V0.34 体验 APK。

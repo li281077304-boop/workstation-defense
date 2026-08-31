@@ -1,0 +1,20 @@
+{
+  "status": "ART CANDIDATE / REVIEW",
+  "build": "scripts/build-defender-v2-candidates.py",
+  "assets": [
+    {
+      "id": "DEFENDER_004_FAN_V2",
+      "semantic": "小风扇战斗角色样板",
+      "source": "art/source/defenders/fan_v2_source_63dcaaa4.png",
+      "sourceSha256": "63dcaaa405e3f1b3dab3260c35c4b1240b6464021ddd6e901da6e731eb92b06d",
+      "candidate": "public/assets/candidates/defenders/defender_004_fan_v2_review.png"
+    },
+    {
+      "id": "DEFENDER_008_THERMOS_V2",
+      "semantic": "保温杯战斗角色样板",
+      "source": "art/source/defenders/thermos_v2_source_5dda2475.png",
+      "sourceSha256": "5dda24751987fa8c1cfe80671dc47b1fa789b2abe154cc182759bfe25658db0a",
+      "candidate": "public/assets/candidates/defenders/defender_008_thermos_v2_review.png"
+    }
+  ]
+}

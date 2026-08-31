@@ -10,6 +10,8 @@ record. Candidate art is never a runtime dependency.
 | DEFENDER-C | `Codex 图像 2026年8月30日 16_15_37.png` | `e7d7db46a2f2…` | 1536×1024 | Mature defender master sheet with a complete named 1–4096 office-item chain. | Yes | Yes | SELECTED |
 | ENEMY-LEGACY-APPROVED-A | `Codex 图像 2026年8月30日 16_11_52.png` | `1270cc1d5f8e…` | 1536×1024 RGBA | Recovered 8-character capital-pressure master: contract, KPI, meeting, approval, report, ranking, executive, system core. | — | Yes | SELECTED / prior approved master |
 | BACKGROUND-OFFICE-CANDIDATE-01 | `exec-b1d2b92a-8883-47f7-b947-75efe691c836.png` | `906587cbf37c…` | 1672×941 RGB | New original late-night open-office battlefield candidate; clear empty central floor, edge-only furniture and city-night windows. | — | Yes | PRODUCTION_CANDIDATE_REVIEW |
+| DEFENDER-V2-FAN-01 | `fan_v2_source_63dcaaa4.png` | `63dcaaa405e3…` | 1230×1278 RGBA | Blue characterized desk fan: strong round silhouette, work badge, limbs and right-facing attack pose. | — | Yes | CANDIDATE / REVIEW |
+| DEFENDER-V2-THERMOS-01 | `thermos_v2_source_5dda2475.png` | `5dda24751987…` | 1235×1274 RGBA | Red, stout veteran-style thermos character: open lid, steam, limbs and right-facing attack nozzle. | — | Yes | CANDIDATE / REVIEW |
 
 The selected defender source has been deterministically cropped into Production
 Defender files. The recovered enemy master is also reproducibly cropped into

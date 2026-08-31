@@ -15,5 +15,7 @@ export const MOBILE_LAYOUT = {
     rowHeight: 176,
   },
   spawnSlot: { left: 45, width: 150, centerY: 590, height: 480 },
+  /** Separate disposal control; it is UI, never a logical Board cell. */
+  dismissSlot: { left: 45, top: 858, width: 150, height: 150 },
   header: { scoreY: 36, settingsX: 1834 },
 } as const;

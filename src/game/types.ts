@@ -62,12 +62,14 @@ export type TurnMetrics = {
   totalMoyuGenerated: number;
   totalMoyuEarned: number;
   totalMoyuExtracted: number;
+  /** Moyu spent to dismiss a Defender. This keeps debt accounting auditable. */
+  totalMoyuDismissalCost: number;
   totalMoyuOverflow: number;
 };
 /** A concrete shot: unlike a lane damage pool it owns its remaining damage. */
 export type Projectile = { /** Runtime-created shots always have these; optional fields preserve test/renderer migration compatibility. */ id?: string; sourceDefenderId?: string; /** compatibility alias for existing renderer code */ sourcePlantId?: string; lane: number; damage?: number; remainingDamage: number; position: number; isAlive?: boolean };
 export type TurnEvent = {
-  type: 'turn-start' | 'shot' | 'hit' | 'pierce' | 'enemy-spawned' | 'reward-spawned' | 'reward-advance' | 'reward-hit' | 'reward-captured' | 'spawn-slot-updated' | 'kill' | 'advance' | 'game-over' | 'debug-spawn' | 'spawn-blocked' | 'spawn-rejected' | 'moyu-drop-queued' | 'moyu-spawned' | 'moyu-advance' | 'moyu-collected' | 'moyu-auto-recovered' | 'moyu-extracted' | 'moyu-overflow' | 'projectile-ended';
+  type: 'turn-start' | 'shot' | 'hit' | 'pierce' | 'enemy-spawned' | 'reward-spawned' | 'reward-advance' | 'reward-hit' | 'reward-captured' | 'spawn-slot-updated' | 'kill' | 'advance' | 'game-over' | 'debug-spawn' | 'spawn-blocked' | 'spawn-rejected' | 'moyu-drop-queued' | 'moyu-spawned' | 'moyu-advance' | 'moyu-collected' | 'moyu-auto-recovered' | 'moyu-extracted' | 'moyu-overflow' | 'defender-dismissed' | 'projectile-ended';
   lane?: number;
   col?: number;
   subjectId?: string;
@@ -92,16 +94,18 @@ export type GameState = {
   rewardBalls: RewardBall[];
   /** Legacy compatibility field only. New economy never creates RewardBall entities. */
   moyuPickups: MoyuPickup[];
-  /** Earned currency. Logic updates this at interception/auto-recovery, never animation completion. */
+  /** Net account balance. It may be negative after a Defender dismissal. */
   moyuBank: number;
   /** Historical high-water mark for this run. It never falls after a merge or move. */
   highestDefenderValue: number;
   /** Currency that became a battlefield pickup after a carrier was defeated. */
   totalMoyuGenerated: number;
-  /** Currency successfully credited to the Bank. Always equals extracted + current Bank. */
+  /** Currency successfully credited to the Bank. Always equals extracted + dismissal cost + current Bank. */
   totalMoyuEarned: number;
   /** Currency moved out of the Bank into the Spawn Slot. */
   totalMoyuExtracted: number;
+  /** Currency spent removing low-value Defenders from the board. */
+  totalMoyuDismissalCost: number;
   /** Currency discarded because the Bank was already at capacity (including V1 migration trimming). */
   totalMoyuOverflow: number;
   birthSlot: number | null;

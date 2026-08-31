@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CURRENT_RUN_SAVE_KEY,
   CURRENT_RUN_SAVE_TEMP_KEY,
+  V2_CURRENT_RUN_SAVE_KEY,
   LEGACY_CURRENT_RUN_SAVE_KEY,
   clearCurrentRun,
   loadCurrentRun,
@@ -31,7 +32,7 @@ describe('CurrentRunSave', () => {
 
     expect(saveCurrentRun({ state, runtime }, storage, 100)).toBe(true);
     expect(loadCurrentRun<typeof runtime>(storage)).toEqual({
-      saveVersion: 2,
+      saveVersion: 3,
       savedAt: 100,
       run: { state, runtime },
     });
@@ -54,7 +55,7 @@ describe('CurrentRunSave', () => {
 
     const newState = emptyState();
     newState.turn = 4;
-    const pending = { saveVersion: 2, savedAt: 200, run: { state: newState, runtime: { laneSeed: 4 } } };
+    const pending = { saveVersion: 3, savedAt: 200, run: { state: newState, runtime: { laneSeed: 4 } } };
     storage.setItem(CURRENT_RUN_SAVE_TEMP_KEY, JSON.stringify(pending));
 
     expect(loadCurrentRun<{ laneSeed: number }>(storage)?.run.state.turn).toBe(4);
@@ -92,8 +93,29 @@ describe('CurrentRunSave', () => {
     delete (legacy as Partial<typeof legacy>).totalMoyuGenerated;
     delete (legacy as Partial<typeof legacy>).totalMoyuEarned;
     delete (legacy as Partial<typeof legacy>).totalMoyuExtracted;
+    delete (legacy as Partial<typeof legacy>).totalMoyuDismissalCost;
     delete (legacy as Partial<typeof legacy>).totalMoyuOverflow;
     storage.setItem(LEGACY_CURRENT_RUN_SAVE_KEY, JSON.stringify({ saveVersion: 1, savedAt: 100, run: { state: legacy, runtime: {} } }));
     expect(loadCurrentRun(storage)?.run.state).toMatchObject({ highestDefenderValue: 1, moyuBank: 1, totalMoyuEarned: 1, totalMoyuOverflow: 72 });
+  });
+
+  it('migrates a V2 save by adding a zero dismissal ledger', () => {
+    const storage = new MemoryStorage();
+    const state = emptyState();
+    state.highestDefenderValue = 32;
+    state.moyuBank = 8;
+    state.totalMoyuEarned = 8;
+    delete (state as Partial<typeof state>).totalMoyuDismissalCost;
+    storage.setItem(V2_CURRENT_RUN_SAVE_KEY, JSON.stringify({ saveVersion: 2, savedAt: 120, run: { state, runtime: {} } }));
+    expect(loadCurrentRun(storage)?.run.state).toMatchObject({ moyuBank: 8, totalMoyuDismissalCost: 0 });
+  });
+
+  it('round-trips a negative Moyu balance with its dismissal ledger', () => {
+    const storage = new MemoryStorage();
+    const state = emptyState();
+    state.moyuBank = -8;
+    state.totalMoyuDismissalCost = 8;
+    expect(saveCurrentRun({ state, runtime: {} }, storage, 150)).toBe(true);
+    expect(loadCurrentRun(storage)?.run.state).toMatchObject({ moyuBank: -8, totalMoyuDismissalCost: 8 });
   });
 });
