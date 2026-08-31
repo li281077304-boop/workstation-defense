@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="paper" x1="0" x2="0" y2="1"><stop stop-color="#f5ecdc"/><stop offset="1" stop-color="#c8bba4"/></linearGradient>
-    <linearGradient id="suit" x1="0" x2="1"><stop stop-color="#52667a"/><stop offset="1" stop-color="#222c3b"/></linearGradient>
+    <linearGradient id="suit" x1="0" x2="1"><stop stop-color="#7a5c4f"/><stop offset=".45" stop-color="#48333c"/><stop offset="1" stop-color="#252a39"/></linearGradient>
   </defs>
   <ellipse cx="257" cy="458" rx="136" ry="25" fill="#0b1420" opacity=".27"/>
   <path d="M152 460h95l-1-53-71 7zM267 460h96l-24-46-69-7z" fill="#212d3c" stroke="#0b1420" stroke-width="13" stroke-linejoin="round"/>
@@ -16,4 +16,5 @@
   <path d="M214 193h24M274 193h24" stroke="#1d2733" stroke-width="12" stroke-linecap="round"/>
   <path d="M232 225c14 10 33 10 47 0" fill="none" stroke="#a54e43" stroke-width="7" stroke-linecap="round"/>
   <circle cx="210" cy="120" r="15" fill="#ffcc5c" stroke="#0b1420" stroke-width="8"/><path d="M210 111v10M201 120h18" stroke="#874c20" stroke-width="4"/>
+  <path d="M144 407h226" stroke="#efaf58" stroke-width="6" opacity=".72" stroke-linecap="round"/>
 </svg>

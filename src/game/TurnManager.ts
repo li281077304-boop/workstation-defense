@@ -1,4 +1,4 @@
-import { BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, MAX_DEFENDER_VALUE, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, largeEnemyChanceFor, maxRewardValueFor, type CombatRules } from './config';
+import { BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, MAX_DEFENDER_VALUE, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, STARTING_DEFENDER_LAYOUT, largeEnemyChanceFor, maxRewardValueFor, type CombatRules } from './config';
 import { cumulativeExpectedGeneratedReward, cumulativeExpectedMoyuValue, difficultyFactor, enemyHpFor, expectedMoyuValueForTurn, expectedPlantPower, expectedRewardPerTurn, expectedSingleRewardValue, hpIncomeBudget, largeEnemyChanceFor as curveLargeChance, largeEnemyHpFor, largeEnemyHpV2, normalEnemyHp, normalEnemyTargetHp, perTurnBudget, rewardChanceFor, rewardMaxByTurn, rewardMaxFor, rewardValueWeights, rewardWeightAlpha, type RewardWeightOptions } from './difficulty';
 import type { Enemy, GameState, Move, MoyuPickup, Plant, Projectile, RewardBall, SpawnSafetyRecord, TurnEvent, TurnMetrics } from './types';
 
@@ -46,6 +46,13 @@ export function emptyState(): GameState {
   };
 }
 
+/** The opening board is explicit and testable; emptyState stays an empty board. */
+export function seedStartingDefenders(state: GameState) {
+  for (const start of STARTING_DEFENDER_LAYOUT) {
+    state.plants[start.row][start.col] = { id: `start-${start.row}-${start.col}`, value: start.value };
+  }
+}
+
 export class TurnManager {
   private currentMetrics = { theoreticalDamage: 0, effectiveEnemyDamage: 0, rewardSpawnValue: 0, rewardCapturedValue: 0, rewardRealizedValue: 0, overkillWaste: 0, moyuInterceptWaste: 0, moyuCollectedValue: 0, moyuPickupCount: 0, autoRecoveredMoyuValue: 0, projectileCount: 0 };
   /** Drops remain invisible/unhittable until every projectile of this turn finishes. */
@@ -74,6 +81,17 @@ export class TurnManager {
   static moyuCapacityFor(maxDefenderValue: number): number {
     const safeHighest = Number.isFinite(maxDefenderValue) ? Math.max(1, Math.floor(maxDefenderValue)) : 1;
     return Math.min(32, Math.max(1, Math.floor(safeHighest / 4)));
+  }
+
+  /** Compatibility-safe single read path for carrier labels, drops, and tests. */
+  static enemyMoyuValue(enemy: Pick<Enemy, 'moyuValue'>): number {
+    return Math.max(0, Math.floor(enemy.moyuValue ?? 0));
+  }
+
+  /** One player-facing extraction rule; UI never recalculates this independently. */
+  highestAffordableMoyu(maxValue = MAX_DEFENDER_VALUE): number | null {
+    if (!Number.isSafeInteger(maxValue) || maxValue < 1 || this.state.birthSlot !== null || this.state.moyuBank < 1) return null;
+    return 2 ** Math.floor(Math.log2(Math.min(this.state.moyuBank, maxValue)));
   }
 
   /** The public UI/debug value. This also repairs direct test/editor state safely. */
@@ -299,8 +317,8 @@ export class TurnManager {
     if (this.rules.scoreMode === 'kill') this.state.score += enemy.maxHp;
     else if (this.rules.scoreMode === 'damage') this.state.score += enemy.hp; // last hit that killed it
     this.record({ type: 'kill', lane: enemy.row, col, subjectId: enemy.id, value: enemy.maxHp, message: `Defeated ${enemy.id} (+${enemy.maxHp})` });
-    if ((enemy.moyuValue ?? 0) > 0) {
-      const value = enemy.moyuValue!;
+    const value = TurnManager.enemyMoyuValue(enemy);
+    if (value > 0) {
       enemy.moyuValue = 0; // exactly-once guard before the delayed spawn.
       this.pendingMoyuDrops.push({ value, row: enemy.row, col });
       this.record({ type: 'moyu-drop-queued', lane: enemy.row, col, subjectId: enemy.id, value, message: `Queued Moyu ${value} drop from ${enemy.id}` });
@@ -425,10 +443,8 @@ export class TurnManager {
    * value in one tap.  It deliberately does not start a Turn.
    */
   extractHighestMoyu(maxValue = MAX_DEFENDER_VALUE): boolean {
-    if (!Number.isSafeInteger(maxValue) || maxValue < 1 || this.state.birthSlot !== null || this.state.moyuBank < 1) return false;
-    const affordable = Math.min(this.state.moyuBank, maxValue);
-    const value = 2 ** Math.floor(Math.log2(affordable));
-    return this.extractMoyu(value);
+    const value = this.highestAffordableMoyu(maxValue);
+    return value !== null && this.extractMoyu(value);
   }
 
   /**

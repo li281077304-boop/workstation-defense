@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RULES, MAX_DEFENDER_VALUE } from '../src/game/config';
+import { DEFAULT_RULES, MAX_DEFENDER_VALUE, STARTING_DEFENDER_LAYOUT } from '../src/game/config';
 import { cumulativeExpectedMoyuValue, expectedMoyuValueForTurn } from '../src/game/difficulty';
-import { emptyState, TurnManager } from '../src/game/TurnManager';
+import { emptyState, seedStartingDefenders, TurnManager } from '../src/game/TurnManager';
 import type { Enemy, Projectile } from '../src/game/types';
 
 const plant = (value: number) => ({ id: `plant-${value}-${crypto.randomUUID()}`, value });
@@ -112,5 +112,30 @@ describe('Moyu Economy V2', () => {
     const m = new TurnManager(s, quietRules); s.moyuPickups.push({ id: 'm', value: 4, row: 0, col: 2, isCollected: false, spawnTurn: 0 }); m.resolveProjectile(shot(1));
     expect(s).toMatchObject({ moyuBank: 8, totalMoyuEarned: 8, totalMoyuOverflow: 2 });
     expect(s.events.find(event => event.type === 'moyu-overflow')).toMatchObject({ overflowValue: 2 });
+  });
+  it('29 enemy Moyu value stays intact from carrier state through its delayed pickup', () => {
+    for (const value of [1, 8, 32]) {
+      const s = withHighest(emptyState(), 128); s.enemies.push(enemy(`carrier-${value}`, 1, 2, value));
+      const m = new TurnManager(s, quietRules); m.resolveProjectile(shot(1));
+      expect(TurnManager.enemyMoyuValue({ moyuValue: value })).toBe(value);
+      expect(s.events.find(event => event.type === 'moyu-drop-queued')).toMatchObject({ value });
+      m.finalizeProjectilePhase();
+      expect(s.moyuPickups).toHaveLength(1); expect(s.moyuPickups[0].value).toBe(value);
+    }
+  });
+  it('30 pickup credit plus capacity overflow always equals the carrier drop value', () => {
+    const s = withHighest(emptyState(), 32); s.moyuBank = 6; s.totalMoyuEarned = 6;
+    s.moyuPickups.push({ id: 'carrier-8', value: 8, row: 0, col: 2, isCollected: false, spawnTurn: 0 });
+    const m = new TurnManager(s, quietRules); m.resolveProjectile(shot(1));
+    const collected = s.events.find(event => event.type === 'moyu-collected')!;
+    expect((collected.earnedValue ?? 0) + (collected.overflowValue ?? 0)).toBe(8);
+  });
+  it('31 opening layout provides four value-1 Defenders with immediate merge choices', () => {
+    const s = emptyState();
+    seedStartingDefenders(s);
+    expect(STARTING_DEFENDER_LAYOUT).toHaveLength(4);
+    expect(s.plants.flat().filter(Boolean)).toHaveLength(4);
+    expect(s.plants.flat().filter(Boolean).map(defender => defender!.value)).toEqual([1, 1, 1, 1]);
+    expect(s.plants[2]).toEqual([null, null]);
   });
 });

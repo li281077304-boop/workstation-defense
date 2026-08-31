@@ -92,6 +92,14 @@ export const DifficultyConfig: DifficultyConfig = {
 /** The highest defender value currently available to the player. */
 export const MAX_DEFENDER_VALUE = 4096;
 
+/** Fixed opening board: four 1-value Defenders, spread across five lanes. */
+export const STARTING_DEFENDER_LAYOUT = [
+  { row: 0, col: 0, value: 1 },
+  { row: 1, col: 0, value: 1 },
+  { row: 3, col: 0, value: 1 },
+  { row: 4, col: 0, value: 1 },
+] as const;
+
 /** Approved playable configuration captured after the 2,510-score playtest. */
 export const PLAYABLE_BASELINE_V1: Readonly<DifficultyConfig> = Object.freeze(structuredClone(DifficultyConfig));
 

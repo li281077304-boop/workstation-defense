@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { DEFAULT_RULES, BOARD, ACTIVE_DIFFICULTY, ENDLESS_CURVE_V1, REWARD_ECONOMY_CURVE_V2, REWARD_ECONOMY_TEST_CONTROLS, REWARD_ECONOMY_VOLUME_PRESETS, maxRewardValueFor, restorePlayableBaselineV1, restoreRewardEconomyTestDefaults, type DifficultyMode, type RewardEconomyTestControls } from './config';
-import { TurnManager, emptyState, isTurnManagerRuntimeState, type TurnManagerRuntimeState } from './TurnManager';
+import { TurnManager, emptyState, isTurnManagerRuntimeState, seedStartingDefenders, type TurnManagerRuntimeState } from './TurnManager';
 import { clearCurrentRun, loadCurrentRun, saveCurrentRun } from './CurrentRunSave';
 import type { Enemy, Move, MoyuPickup, TurnEvent } from './types';
 import { MOBILE_LAYOUT as L } from '../ui/layout';
@@ -131,13 +131,20 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   }
 
   preload() {
-    for (const [key, path] of IMAGES) this.load.image(key, path);
+    // TEMP Experience enemies are authored as original SVG. Phaser's SVG
+    // loader rasterizes them correctly; the generic image loader can turn
+    // them into opaque black textures on some browser/Android paths.
+    for (const [key, path] of IMAGES) {
+      if (path.endsWith('.svg')) this.load.svg(key, path);
+      else this.load.image(key, path);
+    }
   }
 
   create() {
     // Fresh manager every scene (re)start — otherwise gameOver state leaks and restart never works.
     this.startFreshRun();
-    if (new URLSearchParams(window.location.search).get('visualReview')) this.seedVisualReviewState();
+    const visualReview = new URLSearchParams(window.location.search).get('visualReview');
+    if (visualReview && visualReview !== 'opening') this.seedVisualReviewState();
     this.productPanel?.remove();
     this.productPanel = null;
     this.gameOverRecorded = false;
@@ -167,7 +174,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   /** Dev-only render fixture. It never runs in a normal saved game or changes rules. */
   private seedVisualReviewState() {
     const s = this.manager.state;
-    const overlapReview = new URLSearchParams(window.location.search).get('visualReview') === 'overlap';
+    const reviewMode = new URLSearchParams(window.location.search).get('visualReview');
+    const overlapReview = reviewMode === 'overlap';
     const values = [1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
     for (let r = 0; r < BOARD.rows; r++) for (let c = 0; c < BOARD.defenseCols; c++) {
       const value = values[r * BOARD.defenseCols + c];
@@ -186,11 +194,23 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
           { id: 'review-large', row: 2, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
         ];
     s.moyuPickups = [{ id: 'review-moyu', row: 3, col: 3, value: 8, isCollected: false, spawnTurn: 0 }];
-    s.birthSlot = 4;
-    s.moyuBank = 8;
-    s.highestDefenderValue = 2048;
-    this.visualBirthSlot = 4;
-    this.visualMoyuBank = 8;
+    s.highestDefenderValue = 128;
+    if (reviewMode === 'extract') {
+      s.birthSlot = null;
+      s.moyuBank = 32;
+      this.visualBirthSlot = null;
+      this.visualMoyuBank = 32;
+    } else if (reviewMode === 'pending') {
+      s.birthSlot = 32;
+      s.moyuBank = 0;
+      this.visualBirthSlot = 32;
+      this.visualMoyuBank = 0;
+    } else {
+      s.birthSlot = 4;
+      s.moyuBank = 8;
+      this.visualBirthSlot = 4;
+      this.visualMoyuBank = 8;
+    }
   }
 
   /** New games always replace any stale current-run record before first save. */
@@ -199,7 +219,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.visualBirthSlot = null;
     this.visualMoyuBank = this.manager.state.moyuBank;
     const s = this.manager.state;
-    for (const row of DEFAULT_RULES.startingPlantRows) s.plants[row][0] = { id: `start-${row}`, value: DEFAULT_RULES.startingPlantValue };
+    seedStartingDefenders(s);
     this.manager.seedOpeningBatch(
       { id: 'opening-enemy', ...DEFAULT_RULES.openingEnemy, width: 1, height: 1, maxHp: DEFAULT_RULES.openingEnemy.hp },
       { id: 'opening-reward', ...DEFAULT_RULES.openingReward },
@@ -993,7 +1013,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     } });
   }
 
-  private moyuBankBounds() { return new Phaser.Geom.Rectangle(34, 26, 250, 76); }
+  /** Account and extraction share the left-side supply component. */
+  private moyuBankBounds() {
+    const slot = L.spawnSlot;
+    return new Phaser.Geom.Rectangle(slot.left + 9, slot.centerY - slot.height / 2 + 48, slot.width - 18, 82);
+  }
 
   /** Update only HUD text; no gameplay value is ever mutated here. */
   private updateMoyuBankHud() {
@@ -1025,11 +1049,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const icon = this.add.sprite(bounds.x + 40, bounds.y + bounds.height / 2, 'moyu-icon');
     fitSprite(icon, 48, 48);
     bank.add(icon);
-    bank.add(this.add.text(bounds.x + 78, bounds.y + 13, '摸鱼账户', { fontSize: '18px', color: '#d8ffb6', fontStyle: 'bold' }));
-    const label = this.add.text(bounds.x + 78, bounds.y + 36, `${value} / ${capacity}`, { fontSize: '27px', color: '#ffffff', stroke: '#17370f', strokeThickness: 5, fontStyle: 'bold' });
+    bank.add(this.add.text(bounds.x + 64, bounds.y + 10, '摸鱼', { fontSize: '16px', color: '#d8ffb6', fontStyle: 'bold' }));
+    const label = this.add.text(bounds.x + 64, bounds.y + 28, `${value} / ${capacity}`, { fontSize: '24px', color: '#ffffff', stroke: '#17370f', strokeThickness: 5, fontStyle: 'bold' });
     bank.add(label);
     bank.setData('moyuBankLabel', label);
-    bank.add(this.add.text(bounds.right - 13, bounds.y + bounds.height / 2, full ? 'FULL' : '提取', { fontSize: '16px', color: full ? '#ffea9b' : ready ? '#eaffbd' : '#98aa92', fontStyle: 'bold' }).setOrigin(1, .5));
+    const nextValue = this.manager.highestAffordableMoyu();
+    const next = this.visualBirthSlot === null ? `可提取：${nextValue ?? '—'}` : `待部署：${this.visualBirthSlot}`;
+    bank.add(this.add.text(bounds.x + bounds.width / 2, bounds.y + 63, next, { fontSize: '15px', color: this.visualBirthSlot === null ? '#eaffbd' : '#ffe2a0', fontStyle: 'bold' }).setOrigin(.5));
   }
 
   /** Player-facing live difficulty settings, opened from the visible gear. */
@@ -1496,14 +1522,14 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // Tall Spawn Slot: icon slightly above centre, value below. Empty remains a
     // visible empty slot rather than showing a fake plant.
     const slotCenter = this.getSpawnSlotCenter();
-    this.add.text(slotCenter.x, slotTop + 34, '待部署办公用品', { fontSize: '20px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
+    this.add.text(slotCenter.x, slotTop + 28, '摸鱼账户 / 提取口', { fontSize: '18px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     if (visualBirthSlot !== null) {
       const bspr = this.addBreathingEntity(slotCenter.x, slotCenter.y - 35, PLANT_FRAME(visualBirthSlot), 110, 110, RENDER_DEPTH.UI, 3, 750, 'birth-slot');
       bspr.setData('birthSlot', true);
       const birthLabel = this.add.text(slotCenter.x, slotCenter.y + 126, String(visualBirthSlot), { fontSize: '36px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI + 1);
       bspr.setData('birthLabel', birthLabel);
     } else {
-      this.add.text(slotCenter.x, slotCenter.y + 12, '点击摸鱼账户提取', { fontSize: '16px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
+      this.add.text(slotCenter.x, slotCenter.y + 46, '点击上方账户提取', { fontSize: '15px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     }
 
     // Moyu Pickups are battle entities, not instant income. Each uses a small
@@ -1558,10 +1584,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0).setDepth(placement.depth + 5);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
-      if ((e.moyuValue ?? 0) > 0) {
+      const carrierValue = TurnManager.enemyMoyuValue(e);
+      if (carrierValue > 0) {
         const badge = this.add.container(placement.x + Math.min(58, placement.displayWidth * .32), hpLabelY - 10).setDepth(placement.depth + 6);
         badge.add(this.add.rectangle(0, 0, 66, 36, 0x2f6a29, .96).setStrokeStyle(2, 0xc8f07b, 1).setOrigin(.5));
-        badge.add(this.add.text(0, 0, `+${e.moyuValue}`, { fontSize: '20px', color: '#efffc8', stroke: '#17370f', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
+        badge.add(this.add.text(0, 0, `+${carrierValue}`, { fontSize: '20px', color: '#efffc8', stroke: '#17370f', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
       }
     }
 
