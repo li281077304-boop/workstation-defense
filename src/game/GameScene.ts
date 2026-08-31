@@ -35,12 +35,25 @@ const PLANT_FRAME = (value: number): string => {
 
 /** Cosmetic only: skin is stable and deliberately never reads HP or combat values. */
 const ENEMY_VISUAL = (enemy: Pick<Enemy, 'width' | 'skin'>): { frame: string; tint?: number } => {
-  if (enemy.width === 2) {
-    const tints: Record<string, number> = { 'enemy-large-moss': 0xb7d99a, 'enemy-large-rust': 0xe0b07b, 'enemy-large-violet': 0xc6a5e8 };
-    return { frame: 'enemy-large-01', tint: tints[enemy.skin ?? 'enemy-large-moss'] };
-  }
-  const legal = new Set(['enemy-basic-01', 'enemy-basic-02', 'enemy-basic-03', 'enemy-basic-04', 'enemy-basic-05', 'enemy-basic-06']);
-  return { frame: legal.has(enemy.skin ?? '') ? enemy.skin! : 'enemy-basic-01' };
+  if (enemy.width === 2) return { frame: 'enemy-system-core' };
+  const current: Record<string, string> = {
+    'enemy-office-01': 'enemy-contract',
+    'enemy-office-02': 'enemy-kpi',
+    'enemy-office-03': 'enemy-meeting',
+    'enemy-office-04': 'enemy-approval',
+    'enemy-office-05': 'enemy-report',
+    'enemy-office-06': 'enemy-ranking',
+    'enemy-office-07': 'enemy-executive',
+    // Existing saves retain their old skin identifiers but never re-load zombie art.
+    'enemy-basic-01': 'enemy-contract',
+    'enemy-basic-02': 'enemy-kpi',
+    'enemy-basic-03': 'enemy-meeting',
+    'enemy-basic-04': 'enemy-approval',
+    'enemy-basic-05': 'enemy-report',
+    'enemy-basic-06': 'enemy-ranking',
+    'enemy-elite-01': 'enemy-executive',
+  };
+  return { frame: current[enemy.skin ?? ''] ?? 'enemy-contract' };
 };
 
 /** Active Moyu Economy V2 projectile art. Values above 4096 share the core art. */
@@ -57,14 +70,15 @@ const IMAGES: [string, string][] = [
   ...PLANT_VALUES.map<[string, string]>(v => [`defender-${v}`, ART.defenders[(v >= 8192 ? 4096 : v) as keyof typeof ART.defenders]]),
   ['moyu-icon', ART.moyuIcon],
   ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
-  ['enemy-basic-01', ART.tempExperienceEnemies.basic01],
-  ['enemy-basic-02', ART.tempExperienceEnemies.basic02],
-  ['enemy-basic-03', ART.tempExperienceEnemies.basic03],
-  ['enemy-basic-04', ART.tempExperienceEnemies.basic01],
-  ['enemy-basic-05', ART.tempExperienceEnemies.basic02],
-  ['enemy-basic-06', ART.tempExperienceEnemies.basic03],
-  ['enemy-elite-01', ART.tempExperienceEnemies.basic03],
-  ['enemy-large-01', ART.tempExperienceEnemies.large01],
+  ['enemy-contract', ART.enemies.contract],
+  ['enemy-kpi', ART.enemies.kpi],
+  ['enemy-meeting', ART.enemies.meeting],
+  ['enemy-approval', ART.enemies.approval],
+  ['enemy-report', ART.enemies.report],
+  ['enemy-ranking', ART.enemies.ranking],
+  ['enemy-executive', ART.enemies.executive],
+  ['enemy-system-core', ART.enemies.systemCore],
+  ['office-background-review', ART.backgrounds.officeReview],
   ['effect-merge', 'assets/effects/effect_merge.png'],
   ['effect-hit-green', 'assets/effects/effect_hit_green.png'],
   ['effect-hit-blue', 'assets/effects/effect_hit_blue.png'],
@@ -183,18 +197,22 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       s.plants[r][c] = { id: `review-def-${r}-${c}`, value };
     }
     s.enemies = drop8Review
-      ? [{ id: 'review-carrier-8', row: 2, col: 6, width: 1, height: 1, hp: 1, maxHp: 1, moyuValue: 8, skin: 'enemy-basic-02' }]
+      ? [{ id: 'review-carrier-8', row: 2, col: 6, width: 1, height: 1, hp: 1, maxHp: 1, moyuValue: 8, skin: 'enemy-office-02' }]
       : overlapReview
       ? [
-          { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-basic-01' },
-          { id: 'review-large', row: 1, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
-          { id: 'review-e-front', row: 3, col: 7, width: 1, height: 1, hp: 28, maxHp: 28, moyuValue: 4, skin: 'enemy-basic-03' },
+          { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-office-01' },
+          { id: 'review-large', row: 1, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-system-core-01' },
+          { id: 'review-e-front', row: 3, col: 7, width: 1, height: 1, hp: 28, maxHp: 28, moyuValue: 4, skin: 'enemy-office-03' },
         ]
       : [
-          { id: 'review-e1', row: 0, col: 6, width: 1, height: 1, hp: 12, maxHp: 12, moyuValue: 1, skin: 'enemy-basic-01' },
-          { id: 'review-e2', row: 1, col: 4, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-basic-02' },
-          { id: 'review-e3', row: 3, col: 5, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
-          { id: 'review-large', row: 2, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
+          { id: 'review-e1', row: 0, col: 4, width: 1, height: 1, hp: 12, maxHp: 12, moyuValue: 1, skin: 'enemy-office-01' },
+          { id: 'review-e2', row: 0, col: 6, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-office-02' },
+          { id: 'review-e3', row: 1, col: 4, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-office-03' },
+          { id: 'review-e4', row: 1, col: 6, width: 1, height: 1, hp: 30, maxHp: 30, moyuValue: 4, skin: 'enemy-office-04' },
+          { id: 'review-e5', row: 3, col: 4, width: 1, height: 1, hp: 34, maxHp: 34, skin: 'enemy-office-05' },
+          { id: 'review-e6', row: 4, col: 5, width: 1, height: 1, hp: 36, maxHp: 36, moyuValue: 8, skin: 'enemy-office-06' },
+          { id: 'review-e7', row: 4, col: 7, width: 1, height: 1, hp: 40, maxHp: 40, skin: 'enemy-office-07' },
+          { id: 'review-large', row: 2, col: 8, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-system-core-01' },
         ];
     s.moyuPickups = drop8Review
       ? [{ id: 'review-drop-8', row: 2, col: 5, value: 8, isCollected: false, spawnTurn: 0 }]
@@ -1410,25 +1428,15 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
    * overlap and lighting before a real Production office background is approved.
    */
   private renderTemporaryOfficeBackground() {
-    const g = this.add.graphics().setDepth(0);
-    g.fillStyle(0x0d1722, 1).fillRect(0, 0, L.width, L.height);
+    // This image is deliberately a review candidate, not an approved Production
+    // background. It lets runtime art review happen without silently using rural
+    // legacy art or changing any board coordinates.
+    this.add.image(L.width / 2, L.height / 2, 'office-background-review')
+      .setDisplaySize(L.width, L.height).setDepth(0);
+    const g = this.add.graphics().setDepth(RENDER_DEPTH.FLOOR);
     // Far wall, windows and warm ceiling pools: shallow office perspective.
-    g.fillStyle(0x172a3b, 1).fillRect(0, 118, L.width, 178);
-    g.fillStyle(0x0a1420, 1).fillRect(190, 140, 1530, 132);
-    for (let x = 220; x < 1700; x += 220) {
-      g.fillStyle(0x183b5b, .92).fillRect(x, 150, 176, 104);
-      g.fillStyle(0x6eaed2, .16).fillRect(x + 10, 160, 156, 84);
-      g.fillStyle(0xd8b675, .24).fillRoundedRect(x + 24, 112, 128, 16, 8);
-      g.fillStyle(0xffffff, .07).fillRoundedRect(x + 34, 115, 108, 5, 3);
-    }
-    // Distant low-contrast desks and screens remain above the playable floor.
-    for (let x = 260; x < 1680; x += 285) {
-      g.fillStyle(0x203343, .9).fillRoundedRect(x, 258, 165, 26, 5);
-      g.fillStyle(0x2e668b, .5).fillRect(x + 34, 218, 78, 37);
-      g.fillStyle(0xe3bd76, .14).fillRect(x + 12, 282, 140, 7);
-    }
-    // Open office floor — deliberately unified behind both grids.
-    g.fillStyle(0x263746, 1).fillRect(0, 286, L.width, L.height - 286);
+    // The art owns the environment; these low-alpha overlays only preserve
+    // countable lanes and the shared defense/battlefield ground language.
     g.fillStyle(0x304656, .34).fillRect(0, TOP, L.width, L.height - TOP);
     // Warm defender side fades into neutral central aisle and restrained red entry edge.
     g.fillGradientStyle(0x936c37, 0x936c37, 0x284353, 0x284353, .20, .20, .08, .08)
@@ -1458,7 +1466,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     }
     // Edge-only foreground clutter / cables; no interruption of board cells.
     g.lineStyle(3, 0x18212c, .65).lineBetween(10, 1050, 200, 1038).lineBetween(1740, 1055, 1910, 1022);
-    this.add.text(1890, 142, 'TEMP OFFICE · REVIEW ONLY', { fontSize: '16px', color: '#b7d8ea' }).setAlpha(.62).setOrigin(1, 0).setDepth(RENDER_DEPTH.FLOOR + 1);
+    this.add.text(1890, 142, 'OFFICE BACKGROUND · REVIEW CANDIDATE', { fontSize: '16px', color: '#b7d8ea' }).setAlpha(.62).setOrigin(1, 0).setDepth(RENDER_DEPTH.FLOOR + 1);
   }
 
   /* ─── Sprite-based rendering ─── */

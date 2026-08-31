@@ -110,20 +110,23 @@ export const DEFENDER_META: Record<number, SpriteMeta> = {
 
 /** Enemy 元数据 (按 skin key) */
 export const ENEMY_META: Record<string, SpriteMeta> = {
-  'enemy-basic-01': { id: 'enemy-basic-01', ...defaultMeta },
-  'enemy-basic-02': { id: 'enemy-basic-02', ...defaultMeta },
-  'enemy-basic-03': { id: 'enemy-basic-03', ...defaultMeta },
-  'enemy-basic-04': { id: 'enemy-basic-04', ...defaultMeta },
-  'enemy-basic-05': { id: 'enemy-basic-05', ...defaultMeta },
-  'enemy-basic-06': { id: 'enemy-basic-06', ...defaultMeta },
-  'enemy-elite-01':  { id: 'enemy-elite-01',  ...defaultMeta, artScale: 1.05 },
-  'enemy-large-01':  {
-    id: 'enemy-large-01',
+  'enemy-office-01': { id: 'enemy-office-01', ...defaultMeta, artScale: .98 },
+  'enemy-office-02': { id: 'enemy-office-02', ...defaultMeta, artScale: 1.02 },
+  'enemy-office-03': { id: 'enemy-office-03', ...defaultMeta, artScale: 1.06, shadowScaleX: .84 },
+  'enemy-office-04': { id: 'enemy-office-04', ...defaultMeta, artScale: .98 },
+  'enemy-office-05': { id: 'enemy-office-05', ...defaultMeta, artScale: 1.00 },
+  'enemy-office-06': { id: 'enemy-office-06', ...defaultMeta, artScale: .96 },
+  'enemy-office-07': { id: 'enemy-office-07', ...defaultMeta, artScale: 1.03, shadowScaleX: .82 },
+  'enemy-system-core-01':  {
+    id: 'enemy-system-core-01',
     footprintW: 2,
     footprintH: 2,
     pivotX: 0.5,
     pivotY: 1.0,
-    artScale: 1.0,
+    artScale: 1.02,
+    shadowScaleX: 1.05,
+    shadowScaleY: .25,
+    shadowAlpha: .32,
   },
 };
 

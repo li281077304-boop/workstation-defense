@@ -225,3 +225,10 @@
 - 摸鱼系统补齐可读反馈：携带值标识、延迟掉落提示、截弹回收飞向账户、账户容量提升、溢出提示、提取成功与出生槽占用提示。
 - 旧僵尸视觉替换为 `TEMP / EXPERIENCE ONLY` 的原创 KPI / 会议 / 审批 / 加班系统占位敌人；不改变 Enemy 类型、HP、占格或出生规则。
 - Android 体验版使用已有 `versionCode 6` / `versionName 2.1` 进行打包；APK 结果随本轮构建记录。
+
+## 2026-08-31 — V0.33 Enemy Character + Office Background Art Pass
+
+- 从 Downloads 恢复此前已明确确认为正式母版的 8 敌人总图，保留不可变 Source，并通过 `build-enemy-assets.py` 生成合同、KPI、会议、审批、报表、末位淘汰、高管和 2×2 资本系统核心八个独立透明 PNG。
+- Enemy skin 改为稳定的纯视觉分配；旧存档的旧 skin ID 会映射到新敌人图，绝不回退加载僵尸或 TEMP 体验占位图。
+- 未找回可用办公室背景，生成一张原创办公室地面候选并通过 `build-background-assets.py` 建立 Source → Review Runtime 血缘；状态为 `PRODUCTION_CANDIDATE_REVIEW`，等待用户肉眼批准。
+- 扩展资产检查：验证 13 Defender、8 Enemy、来源 SHA、派生 SHA、运行时旧僵尸/乡村引用，以及候选背景的“有效但待批准”状态。

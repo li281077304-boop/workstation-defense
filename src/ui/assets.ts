@@ -20,7 +20,7 @@ export const ART = {
     2048: 'assets/production/defenders/defender_2048_shredder.png',
     4096: 'assets/production/defenders/defender_4096_workstation_core.png',
   } as Record<(typeof DEFENDER_VALUES)[number], string>,
-  /** TEMP / EXPERIENCE ONLY — original office-pressure placeholders, not Production art. */
+  /** TEMP / EXPERIENCE ONLY — retained only as historical fallback art. */
   tempExperienceEnemies: {
     // PNG runtime copies keep the original SVG source beside them. This avoids
     // Phaser/WebView SVG texture decoding differences during Android trials.
@@ -29,7 +29,17 @@ export const ART = {
     basic03: 'assets/temp/experience-enemies/enemy_temp_approval_drone.png',
     large01: 'assets/temp/experience-enemies/enemy_temp_overtime_system_large.png',
   },
-  enemies: { basic01: 'assets/enemies/enemy_basic_01.png', basic02: 'assets/enemies/enemy_basic_02.png', large01: 'assets/enemies/enemy_large_01.png' },
+  /** Recovered approved capital-pressure character art. */
+  enemies: {
+    contract: 'assets/production/enemies/enemy_01_contract.png',
+    kpi: 'assets/production/enemies/enemy_02_kpi.png',
+    meeting: 'assets/production/enemies/enemy_03_meeting.png',
+    approval: 'assets/production/enemies/enemy_04_approval.png',
+    report: 'assets/production/enemies/enemy_05_report.png',
+    ranking: 'assets/production/enemies/enemy_06_ranking.png',
+    executive: 'assets/production/enemies/enemy_07_executive.png',
+    systemCore: 'assets/production/enemies/enemy_08_system_core.png',
+  },
   rewards: Object.fromEntries([1, 2, 4, 8].map(value => [value, `assets/rewards/reward_${value}.png`])),
   /**
    * Moyu Economy V2 keeps projectile presentation entirely separate from
@@ -51,6 +61,10 @@ export const ART = {
     4096: 'assets/projectiles/moyu-v2/projectile_4096_core.png',
   },
   moyuIcon: 'assets/ui/moyu_icon.png',
-  backgrounds: { battlefieldV0: 'assets/backgrounds/battlefield_v0.png' },
+  backgrounds: {
+    /** Candidate only: used by the V0.33 art-review build, not yet approved Production art. */
+    officeReview: 'assets/candidates/backgrounds/battlefield_office_v1_review.png',
+    legacyCountryside: 'assets/backgrounds/battlefield_v0.png',
+  },
   tiles: { battlefield: 'assets/tiles/battlefield_cell_v1.png', defense: 'assets/tiles/defense_cell_v1.png', birthSlot: 'assets/ui/birth_slot.png' },
 } as const;

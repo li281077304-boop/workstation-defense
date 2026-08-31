@@ -23,11 +23,13 @@ Historical `plants/`, `d-family/`, `characters/`, and rural battlefield art are
 retained without deletion. They are reference material only and must not receive
 new runtime references.
 
-## Current V0.31 block
+## Current V0.33 state
 
-The workspace contains office-item Projectile art, but it contains neither the
-approved 13 Defender body PNGs nor an approved landscape office battlefield
-background. Therefore there is no safe `ART.defenders` or production-background
-runtime mapping to make yet. Switching runtime now would either show missing
-files or violate the rule against substituting projectiles / historical art as
-Defender bodies.
+- 13 Defender bodies are approved Production assets.
+- 8 recovered capital-pressure enemies are approved Production assets.
+- The office background has complete source and reproducible review output, but
+  its state is `PRODUCTION_CANDIDATE_REVIEW`: only the clearly labelled V0.33
+  art-review runtime may use it until the user approves it.
+
+The archived rural background and old plant/d-family art remain historical
+reference only; they may never become a silent runtime fallback.

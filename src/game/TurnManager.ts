@@ -142,10 +142,9 @@ export class TurnManager {
   }
   /** Cosmetic selection is deliberately independent from HP, Turn, and all combat math. */
   private enemySkin(id: string, size: 1 | 2): string {
-    const regular = ['enemy-basic-01', 'enemy-basic-02', 'enemy-basic-03', 'enemy-basic-04', 'enemy-basic-05', 'enemy-basic-06'];
-    // Current art has one large base; the three cosmetic IDs let the renderer
-    // apply distinct visual treatments without implying different armor/HP.
-    const large = ['enemy-large-moss', 'enemy-large-rust', 'enemy-large-violet'];
+    const regular = ['enemy-office-01', 'enemy-office-02', 'enemy-office-03', 'enemy-office-04', 'enemy-office-05', 'enemy-office-06', 'enemy-office-07'];
+    // Visual-only selection: the 2×2 system core has no distinct gameplay stats.
+    const large = ['enemy-system-core-01'];
     const pool = size === 2 ? large : regular;
     // Stable hash: presentation selection must never consume gameplay RNG.
     const hash = [...id].reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 7);

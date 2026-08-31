@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "productionSha256": {
     "public/assets/production/defenders/defender_001_pen.png": "95355c5ff7bad0f009fc6beb3072a98cef5eaeee99ff55ff23f7de4f8a8f7d0b",
     "public/assets/production/defenders/defender_002_glue.png": "26f6776571d2342d20cf3f81fc14178072a0d56bed297ae9ea0cc8b9c6b68435",
@@ -13,7 +13,16 @@
     "public/assets/production/defenders/defender_512_monitor.png": "2c2e52ad44abf3dcf351fc28371bbab056ddba280237af59e7ecf9dc47ee105c",
     "public/assets/production/defenders/defender_1024_printer.png": "c9d400cb1ab2e975d21ff1af400f8e91f3be9916add73aa35fab1c328c0ca141",
     "public/assets/production/defenders/defender_2048_shredder.png": "a6a316e480bee88192c092f3a38df5d5c5148ba12eee95ce50df4cf8b40d8758",
-    "public/assets/production/defenders/defender_4096_workstation_core.png": "3ce082d2c8cf0070337e23b6bdace422c09aa23551755b5a800ff8248b8bf168"
+    "public/assets/production/defenders/defender_4096_workstation_core.png": "3ce082d2c8cf0070337e23b6bdace422c09aa23551755b5a800ff8248b8bf168",
+    "public/assets/production/enemies/enemy_01_contract.png": "e89ba95a0f53f085d2e04df99a78cecfc9422854086591c96206c9550200a325",
+    "public/assets/production/enemies/enemy_02_kpi.png": "e4fd53d442a642eb1578b7a7873b7a2d250f23d0e72949907b3718cddc2c330c",
+    "public/assets/production/enemies/enemy_03_meeting.png": "281763d219a2a4d5bb1b9aaf3710f1e10a2a45297e3f0e83b5e79547a0d7d155",
+    "public/assets/production/enemies/enemy_04_approval.png": "9106d985703c2a95493017452dd2691d07e627d86eb239710453432f84f39e46",
+    "public/assets/production/enemies/enemy_05_report.png": "ec573e59259eaa1df52b76d88561eb422f216f8ce473c055ce2fe7a4eb0573f3",
+    "public/assets/production/enemies/enemy_06_ranking.png": "688ef2828db9f944b9d5dc625d10b90935f729a1c5cef3ed87840798d1390cb9",
+    "public/assets/production/enemies/enemy_07_executive.png": "d68881ff5984b85e488089a595eb55bb97d30854008c259e40db64b5d9ffe4e6",
+    "public/assets/production/enemies/enemy_08_system_core.png": "489e1b7b8486b5fc77fd4d69b3fc89a5d1b5ec7ffbf3707ef68338d3c24be164",
+    "public/assets/candidates/backgrounds/battlefield_office_v1_review.png": "2300393a8204856dc3be9af14fddf27bd33c5e4cb5b85474d4e080839dffd2f3"
   },
   "assets": [
     { "id": "DEFENDER_001", "value": 1, "productionPath": "public/assets/production/defenders/defender_001_pen.png", "sourcePath": "art/source/defenders/workstation_defenders_sheet_candidate_03_e7d7db46a2f2.png", "sourceSha256": "e7d7db46a2f288b329fda723901c14792ab557806c3a67a659d3fa2f9a3cb799", "buildScript": "scripts/build-defender-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "签字笔" },
@@ -29,6 +38,14 @@
     { "id": "DEFENDER_1024", "value": 1024, "productionPath": "public/assets/production/defenders/defender_1024_printer.png", "sourcePath": "art/source/defenders/workstation_defenders_sheet_candidate_03_e7d7db46a2f2.png", "sourceSha256": "e7d7db46a2f288b329fda723901c14792ab557806c3a67a659d3fa2f9a3cb799", "buildScript": "scripts/build-defender-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "打印机" },
     { "id": "DEFENDER_2048", "value": 2048, "productionPath": "public/assets/production/defenders/defender_2048_shredder.png", "sourcePath": "art/source/defenders/workstation_defenders_sheet_candidate_03_e7d7db46a2f2.png", "sourceSha256": "e7d7db46a2f288b329fda723901c14792ab557806c3a67a659d3fa2f9a3cb799", "buildScript": "scripts/build-defender-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "碎纸机" },
     { "id": "DEFENDER_4096", "value": 4096, "productionPath": "public/assets/production/defenders/defender_4096_workstation_core.png", "sourcePath": "art/source/defenders/workstation_defenders_sheet_candidate_03_e7d7db46a2f2.png", "sourceSha256": "e7d7db46a2f288b329fda723901c14792ab557806c3a67a659d3fa2f9a3cb799", "buildScript": "scripts/build-defender-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "终极工位核心" },
-    { "id": "BACKGROUND_OFFICE_V1", "productionPath": "public/assets/production/backgrounds/battlefield_office_v1.png", "sourcePath": null, "sourceSha256": null, "buildScript": "scripts/build-background-assets.py", "status": "MISSING_PRODUCTION_ASSET", "meaning": "横屏办公室战场背景" }
+    { "id": "ENEMY_01_CONTRACT", "productionPath": "public/assets/production/enemies/enemy_01_contract.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "合同资本怪" },
+    { "id": "ENEMY_02_KPI", "productionPath": "public/assets/production/enemies/enemy_02_kpi.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "KPI督工怪" },
+    { "id": "ENEMY_03_MEETING", "productionPath": "public/assets/production/enemies/enemy_03_meeting.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "会议催命怪" },
+    { "id": "ENEMY_04_APPROVAL", "productionPath": "public/assets/production/enemies/enemy_04_approval.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "审批盖章怪" },
+    { "id": "ENEMY_05_REPORT", "productionPath": "public/assets/production/enemies/enemy_05_report.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "报表怪" },
+    { "id": "ENEMY_06_RANKING", "productionPath": "public/assets/production/enemies/enemy_06_ranking.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "末位淘汰执行官" },
+    { "id": "ENEMY_07_EXECUTIVE", "productionPath": "public/assets/production/enemies/enemy_07_executive.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "资本高管怪" },
+    { "id": "ENEMY_08_SYSTEM_CORE", "productionPath": "public/assets/production/enemies/enemy_08_system_core.png", "sourcePath": "art/source/enemies/enemy_sheet_legacy_approved_1270cc1d5f8e.png", "sourceSha256": "1270cc1d5f8e133a080722e1b6a4483e0ee1f837d8bda116f5d71ff9876191f6", "buildScript": "scripts/build-enemy-assets.py", "status": "APPROVED_PRODUCTION", "meaning": "巨型资本系统核心" },
+    { "id": "BACKGROUND_OFFICE_V1", "productionPath": "public/assets/candidates/backgrounds/battlefield_office_v1_review.png", "sourcePath": "art/source/backgrounds/battlefield_office_candidate_01_b1d2b92a.png", "sourceSha256": "906587cbf37cbf07b2204c7b5df7fac38f1e859fdb911c53439193bd99d16009", "buildScript": "scripts/build-background-assets.py", "status": "PRODUCTION_CANDIDATE_REVIEW", "meaning": "横屏办公室战场背景（待用户审核）" }
   ]
 }
