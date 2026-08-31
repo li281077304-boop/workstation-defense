@@ -17,7 +17,7 @@
 - TEMP EXPERIENCE ONLY 敌人提升轮廓、对比和类型区分，继续不是正式资本怪美术。
 - 新增未来美术 TODO：办公用品角色化、资本压力角色化与正式办公室背景；本轮未调整 R026、掉率、容量、敌人 HP 或出生压力。
 
-验证：待本轮 `npm test`、Web build 与 Android Experience APK 完成后补充结果。
+验证：`npm test` 95/95 通过；`npm run build` 通过；Java 21 下 `npx cap sync android` 与 `./gradlew assembleDebug` 通过，体验 APK 未提交入源码仓库。
 
 ---
 

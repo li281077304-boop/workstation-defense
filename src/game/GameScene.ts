@@ -176,12 +176,15 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const s = this.manager.state;
     const reviewMode = new URLSearchParams(window.location.search).get('visualReview');
     const overlapReview = reviewMode === 'overlap';
+    const drop8Review = reviewMode === 'drop8';
     const values = [1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
     for (let r = 0; r < BOARD.rows; r++) for (let c = 0; c < BOARD.defenseCols; c++) {
       const value = values[r * BOARD.defenseCols + c];
       s.plants[r][c] = { id: `review-def-${r}-${c}`, value };
     }
-    s.enemies = overlapReview
+    s.enemies = drop8Review
+      ? [{ id: 'review-carrier-8', row: 2, col: 6, width: 1, height: 1, hp: 1, maxHp: 1, moyuValue: 8, skin: 'enemy-basic-02' }]
+      : overlapReview
       ? [
           { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-basic-01' },
           { id: 'review-large', row: 1, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
@@ -193,7 +196,9 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
           { id: 'review-e3', row: 3, col: 5, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
           { id: 'review-large', row: 2, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
         ];
-    s.moyuPickups = [{ id: 'review-moyu', row: 3, col: 3, value: 8, isCollected: false, spawnTurn: 0 }];
+    s.moyuPickups = drop8Review
+      ? [{ id: 'review-drop-8', row: 2, col: 5, value: 8, isCollected: false, spawnTurn: 0 }]
+      : [{ id: 'review-moyu', row: 3, col: 3, value: 8, isCollected: false, spawnTurn: 0 }];
     s.highestDefenderValue = 128;
     if (reviewMode === 'extract') {
       s.birthSlot = null;
