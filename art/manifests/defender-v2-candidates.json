@@ -15,6 +15,17 @@
       "source": "art/source/defenders/thermos_v2_source_5dda2475.png",
       "sourceSha256": "5dda24751987fa8c1cfe80671dc47b1fa789b2abe154cc182759bfe25658db0a",
       "candidate": "public/assets/candidates/defenders/defender_008_thermos_v2_review.png"
-    }
+    },
+    { "id": "DEFENDER_001_PEN_V2", "semantic": "新人笔角色", "source": "art/source/defenders/defender_sheet_A_v1.png", "sourceSha256": "c04a9abc9841744bb65e958a16276c80919bf59f371bca3bcecb7f4fdb2cd5be", "candidate": "public/assets/candidates/defenders/defender_001_pen_v2_review.png" },
+    { "id": "DEFENDER_002_GLUE_V2", "semantic": "胶棒角色", "source": "art/source/defenders/defender_sheet_A_v1.png", "sourceSha256": "c04a9abc9841744bb65e958a16276c80919bf59f371bca3bcecb7f4fdb2cd5be", "candidate": "public/assets/candidates/defenders/defender_002_glue_v2_review.png" },
+    { "id": "DEFENDER_016_ENERGY_V2", "semantic": "能量饮料角色", "source": "art/source/defenders/defender_sheet_A_v1.png", "sourceSha256": "c04a9abc9841744bb65e958a16276c80919bf59f371bca3bcecb7f4fdb2cd5be", "candidate": "public/assets/candidates/defenders/defender_016_energy_v2_review.png" },
+    { "id": "DEFENDER_032_STAPLER_V2", "semantic": "订书机角色", "source": "art/source/defenders/defender_sheet_A_v1.png", "sourceSha256": "c04a9abc9841744bb65e958a16276c80919bf59f371bca3bcecb7f4fdb2cd5be", "candidate": "public/assets/candidates/defenders/defender_032_stapler_v2_review.png" },
+    { "id": "DEFENDER_064_SPRAY_V2", "semantic": "喷雾瓶角色", "source": "art/source/defenders/defender_sheet_B_v1.png", "sourceSha256": "11f77a0f98b2ecf10ad9ca3a9d4d036ca675fa3a215b19a383ab6ad83f947095", "candidate": "public/assets/candidates/defenders/defender_064_spray_v2_review.png" },
+    { "id": "DEFENDER_128_PHONE_STAND_V2", "semantic": "手机支架角色", "source": "art/source/defenders/defender_sheet_B_v1.png", "sourceSha256": "11f77a0f98b2ecf10ad9ca3a9d4d036ca675fa3a215b19a383ab6ad83f947095", "candidate": "public/assets/candidates/defenders/defender_128_phone_stand_v2_review.png" },
+    { "id": "DEFENDER_256_LAPTOP_V2", "semantic": "笔记本角色", "source": "art/source/defenders/defender_sheet_B_v1.png", "sourceSha256": "11f77a0f98b2ecf10ad9ca3a9d4d036ca675fa3a215b19a383ab6ad83f947095", "candidate": "public/assets/candidates/defenders/defender_256_laptop_v2_review.png" },
+    { "id": "DEFENDER_512_MONITOR_V2", "semantic": "显示器角色", "source": "art/source/defenders/defender_sheet_B_v1.png", "sourceSha256": "11f77a0f98b2ecf10ad9ca3a9d4d036ca675fa3a215b19a383ab6ad83f947095", "candidate": "public/assets/candidates/defenders/defender_512_monitor_v2_review.png" },
+    { "id": "DEFENDER_1024_PRINTER_V2", "semantic": "打印机角色", "source": "art/source/defenders/defender_sheet_C_v1.png", "sourceSha256": "5759d0ea26a2fefe98fd8886f2010eb7a4da2a9a7f80c2b0e8cad6fb11c642dc", "candidate": "public/assets/candidates/defenders/defender_1024_printer_v2_review.png" },
+    { "id": "DEFENDER_2048_SHREDDER_V2", "semantic": "碎纸机角色", "source": "art/source/defenders/defender_sheet_C_v1.png", "sourceSha256": "5759d0ea26a2fefe98fd8886f2010eb7a4da2a9a7f80c2b0e8cad6fb11c642dc", "candidate": "public/assets/candidates/defenders/defender_2048_shredder_v2_review.png" },
+    { "id": "DEFENDER_4096_WORKSTATION_CORE_V2", "semantic": "终极工位核心角色", "source": "art/source/defenders/defender_sheet_C_v1.png", "sourceSha256": "5759d0ea26a2fefe98fd8886f2010eb7a4da2a9a7f80c2b0e8cad6fb11c642dc", "candidate": "public/assets/candidates/defenders/defender_4096_workstation_core_v2_review.png" }
   ]
 }

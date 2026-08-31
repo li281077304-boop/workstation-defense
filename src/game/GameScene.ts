@@ -29,10 +29,14 @@ type RunSummary = { score: number; turn: number; plantPower: number; firepowerUt
 
 /** Map plant value → standalone image key. */
 const isArtPrototypeReview = () => new URLSearchParams(window.location.search).get('visualReview') === 'art-v2';
+const REVIEW_DEFENDER_FRAMES: Record<number, string> = {
+  1: 'defender-1-v2-review', 2: 'defender-2-v2-review', 4: 'defender-4-v2-review', 8: 'defender-8-v2-review',
+  16: 'defender-16-v2-review', 32: 'defender-32-v2-review', 64: 'defender-64-v2-review', 128: 'defender-128-v2-review',
+  256: 'defender-256-v2-review', 512: 'defender-512-v2-review', 1024: 'defender-1024-v2-review', 2048: 'defender-2048-v2-review', 4096: 'defender-4096-v2-review',
+};
 const PLANT_FRAME = (value: number): string => {
-  if (isArtPrototypeReview() && value === 4) return 'defender-4-v2-review';
-  if (isArtPrototypeReview() && value === 8) return 'defender-8-v2-review';
   const v = [...PLANT_VALUES].reverse().find(n => value >= n) ?? 1;
+  if (isArtPrototypeReview() && REVIEW_DEFENDER_FRAMES[v]) return REVIEW_DEFENDER_FRAMES[v];
   return `defender-${v >= 8192 ? 4096 : v}`;
 };
 
@@ -73,6 +77,17 @@ const IMAGES: [string, string][] = [
   ...PLANT_VALUES.map<[string, string]>(v => [`defender-${v}`, ART.defenders[(v >= 8192 ? 4096 : v) as keyof typeof ART.defenders]]),
   ['defender-4-v2-review', 'assets/candidates/defenders/defender_004_fan_v2_review.png'],
   ['defender-8-v2-review', 'assets/candidates/defenders/defender_008_thermos_v2_review.png'],
+  ['defender-1-v2-review', 'assets/candidates/defenders/defender_001_pen_v2_review.png'],
+  ['defender-2-v2-review', 'assets/candidates/defenders/defender_002_glue_v2_review.png'],
+  ['defender-16-v2-review', 'assets/candidates/defenders/defender_016_energy_v2_review.png'],
+  ['defender-32-v2-review', 'assets/candidates/defenders/defender_032_stapler_v2_review.png'],
+  ['defender-64-v2-review', 'assets/candidates/defenders/defender_064_spray_v2_review.png'],
+  ['defender-128-v2-review', 'assets/candidates/defenders/defender_128_phone_stand_v2_review.png'],
+  ['defender-256-v2-review', 'assets/candidates/defenders/defender_256_laptop_v2_review.png'],
+  ['defender-512-v2-review', 'assets/candidates/defenders/defender_512_monitor_v2_review.png'],
+  ['defender-1024-v2-review', 'assets/candidates/defenders/defender_1024_printer_v2_review.png'],
+  ['defender-2048-v2-review', 'assets/candidates/defenders/defender_2048_shredder_v2_review.png'],
+  ['defender-4096-v2-review', 'assets/candidates/defenders/defender_4096_workstation_core_v2_review.png'],
   ['moyu-icon', ART.moyuIcon],
   ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
   ['enemy-contract', ART.enemies.contract],

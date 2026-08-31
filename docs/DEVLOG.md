@@ -241,3 +241,9 @@
 - Defender 统一接入错相呼吸和发射前压/回弹；Enemy 增加短暂闪白与受击压缩，均只影响表现层。
 - 保存 Value 4 小风扇、Value 8 保温杯两张角色化候选图以及可重复裁切脚本；它们只在 `?visualReview=art-v2` 评审模式出现，未覆盖正式素材。
 - 固化项目内 `npm run build:android`：自动发现系统注册的 Java 21，执行测试、Web 构建、Capacitor 同步、Gradle Debug 打包，并产出 V0.34 体验 APK。
+
+## 2026-09-01 — V0.34 Defender Character Art Pass
+
+- 以 Fan V2 / Thermos V2 为 STYLE ANCHOR，生成三张 2×2 Defender 候选母版，覆盖笔、胶棒、能量饮料、订书机、喷雾瓶、手机支架、笔记本、显示器、打印机、碎纸机与终极工位核心。
+- 保留三张完整 Source 母版，使用 `scripts/build-defender-v2-candidates.py` 自动象限裁切、边缘透明化与 alpha trim，生成 13 张 `ART CANDIDATE / REVIEW` PNG 及 Contact Sheet。
+- `?visualReview=art-v2` 评审模式可在实际战场中加载整套候选 Defender；普通运行时仍保持当前 Production 资产，不改变玩法或数值。

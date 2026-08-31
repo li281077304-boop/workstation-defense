@@ -12,6 +12,9 @@ record. Candidate art is never a runtime dependency.
 | BACKGROUND-OFFICE-CANDIDATE-01 | `exec-b1d2b92a-8883-47f7-b947-75efe691c836.png` | `906587cbf37c…` | 1672×941 RGB | New original late-night open-office battlefield candidate; clear empty central floor, edge-only furniture and city-night windows. | — | Yes | PRODUCTION_CANDIDATE_REVIEW |
 | DEFENDER-V2-FAN-01 | `fan_v2_source_63dcaaa4.png` | `63dcaaa405e3…` | 1230×1278 RGBA | Blue characterized desk fan: strong round silhouette, work badge, limbs and right-facing attack pose. | — | Yes | CANDIDATE / REVIEW |
 | DEFENDER-V2-THERMOS-01 | `thermos_v2_source_5dda2475.png` | `5dda24751987…` | 1235×1274 RGBA | Red, stout veteran-style thermos character: open lid, steam, limbs and right-facing attack nozzle. | — | Yes | CANDIDATE / REVIEW |
+| DEFENDER-V2-SHEET-A | `defender_sheet_A_v1.png` | `c04a9abc9841…` | 1254×1254 RGB source, alpha-trimmed outputs | Pen, glue, energy drink and stapler character master. | 4/4 | Yes | CANDIDATE / REVIEW |
+| DEFENDER-V2-SHEET-B | `defender_sheet_B_v1.png` | `11f77a0f98b2…` | 1236×1273 RGBA | Spray, phone stand, laptop and monitor character master. | 4/4 | Yes | CANDIDATE / REVIEW |
+| DEFENDER-V2-SHEET-C | `defender_sheet_C_v1.png` | `5759d0ea26a2…` | 1254×1254 RGB source, alpha-trimmed outputs | Printer, shredder and workstation core character master. | 3/3 | Yes | CANDIDATE / REVIEW |
 
 The selected defender source has been deterministically cropped into Production
 Defender files. The recovered enemy master is also reproducibly cropped into
