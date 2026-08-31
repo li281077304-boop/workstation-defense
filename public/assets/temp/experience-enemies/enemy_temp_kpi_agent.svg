@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="coat" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#334459"/><stop offset="1" stop-color="#131d2a"/></linearGradient>
+    <linearGradient id="red" x1="0" x2="1"><stop stop-color="#ff7356"/><stop offset="1" stop-color="#a81630"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <ellipse cx="260" cy="458" rx="132" ry="24" fill="#0b1420" opacity=".28"/>
+  <path d="M177 439l-33 17 19 19h94l-4-44zM335 439l33 17-19 19h-94l4-44z" fill="#202b38" stroke="#09131e" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M162 271c10-67 54-92 101-92s95 25 104 92l20 171H143z" fill="url(#coat)" stroke="#09131e" stroke-width="15" stroke-linejoin="round"/>
+  <path d="M250 279l-35 115h84l-32-115z" fill="url(#red)" stroke="#7b1825" stroke-width="8"/>
+  <path d="M166 289l-63 49 20 44 70-48M355 289l60 49-20 44-67-48" fill="#2b3b4d" stroke="#09131e" stroke-width="14" stroke-linejoin="round"/>
+  <rect x="77" y="325" width="67" height="68" rx="13" fill="#202b38" stroke="#09131e" stroke-width="12" transform="rotate(-12 110 359)"/>
+  <path d="M88 361l18-12 12 8 17-19" fill="none" stroke="#ff7356" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M188 176c10-85 139-96 156-1l-4 66H188z" fill="#2e3948" stroke="#09131e" stroke-width="15"/>
+  <path d="M197 189c18-58 109-64 137 0v51H197z" fill="#f0b48f" stroke="#09131e" stroke-width="12"/>
+  <path d="M186 181c11-84 142-96 161 2-40-22-118-19-161-2z" fill="#17212f"/>
+  <path d="M213 226h39M284 226h22" stroke="#17212f" stroke-width="13" stroke-linecap="round"/>
+  <path d="M237 258c16 10 34 10 49 0" fill="none" stroke="#a44b42" stroke-width="7" stroke-linecap="round"/>
+  <rect x="199" y="318" width="127" height="71" rx="13" fill="#13202c" stroke="#0a131c" stroke-width="11"/>
+  <path d="M216 368l20-25 18 13 21-29 31 16" fill="none" stroke="#ff7654" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <circle cx="215" cy="331" r="6" fill="#ff7654"/>
+</svg>

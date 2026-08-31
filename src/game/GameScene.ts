@@ -9,7 +9,7 @@ import { Sfx, ensureAudio } from '../sound';
 import { getAudioManager } from '../audio/AudioManager';
 import { addLocalRecord, loadLocalRecords } from '../records/LocalRecords';
 import { createCellMetrics, placeDefender, placeEnemy, getCellGroundPoint, placeSprite, type PlacementResult, RENDER_DEPTH, worldDepthForGround } from './SpritePlacement';
-import { defaultMeta, getEnemyMeta, DEFENDER_META, type SpriteMeta } from './SpriteMeta';
+import { defaultMeta, getEnemyMeta, DEFENDER_META, MOYU_PICKUP_META, type SpriteMeta } from './SpriteMeta';
 
 const LEFT = L.board.defenseLeft, TOP = L.board.top, ROW = L.board.rowHeight;
 const defenseX = (col: number) => LEFT + col * L.board.defenseCellWidth;
@@ -23,7 +23,7 @@ const CELL_METRICS = createCellMetrics(L.board);
 const isTestBuild = () => window.location.port === '5173';
 
 /** A single projectile's animated journey in one lane. */
-type Flight = { lane: number; frame: string; sourcePlantId: string; impacts: { x: number; type: 'hit' | 'kill' | 'moyu'; value?: number; subjectId?: string; hpAfter?: number }[] };
+type Flight = { lane: number; frame: string; sourcePlantId: string; impacts: { x: number; type: 'hit' | 'kill' | 'moyu'; value?: number; earnedValue?: number; overflowValue?: number; subjectId?: string; hpAfter?: number }[] };
 type CombatVisualStart = { enemies: Enemy[]; moyuPickups: MoyuPickup[]; birthSlot: number | null; moyuBank: number };
 type RunSummary = { score: number; turn: number; plantPower: number; firepowerUtilization: number; rewardCaptureRate: number; highestPlantValue: number; deathPressureRatio: number; lastTenEnemyCounts: number[] };
 
@@ -57,14 +57,14 @@ const IMAGES: [string, string][] = [
   ...PLANT_VALUES.map<[string, string]>(v => [`defender-${v}`, ART.defenders[(v >= 8192 ? 4096 : v) as keyof typeof ART.defenders]]),
   ['moyu-icon', ART.moyuIcon],
   ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
-  ['enemy-basic-01', 'assets/enemies/enemy_basic_01.png'],
-  ['enemy-basic-02', 'assets/enemies/enemy_basic_02.png'],
-  ['enemy-basic-03', 'assets/enemies/enemy_basic_03.png'],
-  ['enemy-basic-04', 'assets/enemies/enemy_basic_04.png'],
-  ['enemy-basic-05', 'assets/enemies/enemy_basic_05.png'],
-  ['enemy-basic-06', 'assets/enemies/enemy_basic_06.png'],
-  ['enemy-elite-01', 'assets/enemies/enemy_elite_01.png'],
-  ['enemy-large-01', 'assets/enemies/enemy_large_01.png'],
+  ['enemy-basic-01', ART.tempExperienceEnemies.basic01],
+  ['enemy-basic-02', ART.tempExperienceEnemies.basic02],
+  ['enemy-basic-03', ART.tempExperienceEnemies.basic03],
+  ['enemy-basic-04', ART.tempExperienceEnemies.basic01],
+  ['enemy-basic-05', ART.tempExperienceEnemies.basic02],
+  ['enemy-basic-06', ART.tempExperienceEnemies.basic03],
+  ['enemy-elite-01', ART.tempExperienceEnemies.basic03],
+  ['enemy-large-01', ART.tempExperienceEnemies.large01],
   ['effect-merge', 'assets/effects/effect_merge.png'],
   ['effect-hit-green', 'assets/effects/effect_hit_green.png'],
   ['effect-hit-blue', 'assets/effects/effect_hit_blue.png'],
@@ -115,6 +115,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   /** Sprite Lab Lite 调试覆盖层 */
   private spriteLabLayer: Phaser.GameObjects.Container | null = null;
   private spriteLabVisible = false;
+  /** Presentation-only notice, populated when a merge raises the Bank cap. */
+  private pendingCapacityUpgrade: number | null = null;
   constructor() { super('game'); }
 
   update() {
@@ -173,13 +175,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     }
     s.enemies = overlapReview
       ? [
-          { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, skin: 'enemy-basic-01' },
+          { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-basic-01' },
           { id: 'review-large', row: 1, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
-          { id: 'review-e-front', row: 3, col: 7, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
+          { id: 'review-e-front', row: 3, col: 7, width: 1, height: 1, hp: 28, maxHp: 28, moyuValue: 4, skin: 'enemy-basic-03' },
         ]
       : [
-          { id: 'review-e1', row: 0, col: 6, width: 1, height: 1, hp: 12, maxHp: 12, skin: 'enemy-basic-01' },
-          { id: 'review-e2', row: 1, col: 4, width: 1, height: 1, hp: 20, maxHp: 20, skin: 'enemy-basic-02' },
+          { id: 'review-e1', row: 0, col: 6, width: 1, height: 1, hp: 12, maxHp: 12, moyuValue: 1, skin: 'enemy-basic-01' },
+          { id: 'review-e2', row: 1, col: 4, width: 1, height: 1, hp: 20, maxHp: 20, moyuValue: 2, skin: 'enemy-basic-02' },
           { id: 'review-e3', row: 3, col: 5, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
           { id: 'review-large', row: 2, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
         ];
@@ -398,7 +400,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private handleMoyuUiPointer(x: number, y: number) {
     const bank = this.moyuBankBounds();
     if (Phaser.Geom.Rectangle.Contains(bank, x, y)) {
-      if (!this.animating && !this.manager.state.gameOver && this.manager.state.birthSlot === null) {
+      if (this.manager.state.birthSlot !== null) {
+        this.floatText(bank.centerX, bank.bottom + 18, '先部署当前办公用品', '#ffd49b');
+      } else if (!this.animating && !this.manager.state.gameOver && this.manager.state.moyuBank < 1) {
+        this.floatText(bank.centerX, bank.bottom + 18, '摸鱼值不足', '#c9d6d2');
+      } else if (!this.animating && !this.manager.state.gameOver) {
         const before = this.manager.state.moyuBank;
         if (this.manager.extractHighestMoyu()) {
           const extracted = before - this.manager.state.moyuBank;
@@ -572,9 +578,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       merged = !!src && !!dst && src.value === dst.value;
     }
     const before = structuredClone(this.manager.state);
+    const capacityBefore = this.manager.moyuCapacity();
     const accepted = this.manager.perform({ from, to } as Move);
     this.cancelDrag();
     if (!accepted) { this.render(); return; }
+    const capacityAfter = this.manager.moyuCapacity();
+    if (capacityAfter > capacityBefore) this.pendingCapacityUpgrade = capacityAfter;
     if (this.manager.state.gameOver) clearCurrentRun();
     this.birthSlotBefore = from === 'birth' ? null : before.birthSlot;
     // A plant taken from the slot vanishes immediately; otherwise keep the
@@ -606,6 +615,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // 1) Render post-operation plants and pre-combat enemies. New spawn events
     // are intentionally absent from this snapshot until the Spawn Phase.
     this.render(0, this.combatVisualStart ?? undefined);
+    if (this.pendingCapacityUpgrade !== null) {
+      const capacity = this.pendingCapacityUpgrade;
+      this.pendingCapacityUpgrade = null;
+      const bank = this.moyuBankBounds();
+      this.time.delayedCall(110, () => this.floatText(bank.centerX, bank.bottom + 18, `摸鱼容量提升：${capacity}`, '#ffe395'));
+    }
     this.playPlacementAnimation();
     // 2) Moyu Economy V2: exactly one projectile per defender, and every
     // defender begins that one shot at the same moment.
@@ -720,6 +735,20 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // Any captured reward has already completed its flight before this phase.
     this.render();
     this.combatVisualStart = null;
+    for (const event of events.filter(event => event.type === 'moyu-spawned')) {
+      const pickup = event.subjectId ? this.findEntity('moyuPickupId', event.subjectId) : undefined;
+      if (pickup) {
+        const base = pickup.scale;
+        pickup.setScale(base * 1.28);
+        this.tweens.add({ targets: pickup, scale: base, duration: 190, ease: 'Back.easeOut' });
+        this.floatText(pickup.x, pickup.y - 44, `掉落 +${event.value ?? 0}`, '#aaff78');
+      }
+    }
+    for (const event of events.filter(event => event.type === 'moyu-overflow' && (event.overflowValue ?? 0) > 0)) {
+      const bank = this.moyuBankBounds();
+      this.floatText(bank.centerX, bank.bottom + 18, event.earnedValue ? `摸鱼溢出 -${event.overflowValue}` : '摸鱼账户已满', '#ffbd92');
+      getAudioManager().playSfx('moyuOverflow');
+    }
     const entities = this.children.list.filter((child): child is Phaser.GameObjects.Container => child instanceof Phaser.GameObjects.Container && (spawned.has(child.getData('enemyId')) || spawned.has(child.getData('moyuPickupId'))));
     if (!entities.length) { this.completeTurn(gameOver); return; }
     for (const entity of entities) entity.setAlpha(0).setScale(0.86);
@@ -798,7 +827,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
         }
       } else if (current && e.type === 'moyu-collected') {
         const col = e.col ?? BOARD.battlefieldCols - 1;
-        current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: 'moyu', value: e.value, subjectId: e.subjectId });
+        current.impacts.push({ x: fieldX(col) + L.board.battlefieldCellWidth / 2, type: 'moyu', value: e.value, earnedValue: e.earnedValue, overflowValue: e.overflowValue, subjectId: e.subjectId });
       }
     }
     if (current) flights.push(current);
@@ -838,7 +867,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
   /** Replay one already-calculated impact without exposing final combat state early. */
   private playImpact(imp: Flight['impacts'][number], y: number, bullet: Phaser.GameObjects.Sprite, done: () => void) {
-    const { x, type, value, subjectId, hpAfter } = imp;
+    const { x, type, value, earnedValue, overflowValue, subjectId, hpAfter } = imp;
     if (type === 'moyu') {
       // A Moyu Pickup consumes this projectile no matter how much damage it
       // still has. Core already added its value to the Bank; this is strictly
@@ -847,13 +876,15 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       const fx = this.add.sprite(x, y, 'effect-merge').setDepth(RENDER_DEPTH.FX + 20);
       fx.setDisplaySize(110, 110);
       this.tweens.add({ targets: fx, scale: 1.7, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => fx.destroy() });
-      if (value) this.floatText(x, y - 16, `+${value} 摸鱼`, '#9dff6e');
+      const credited = earnedValue ?? value ?? 0;
+      if (credited) this.floatText(x, y - 16, `+${credited} 摸鱼`, '#9dff6e');
+      if (overflowValue) this.floatText(x, y + 24, `摸鱼溢出 -${overflowValue}`, '#ffbc8f');
       bullet.destroy();
       const pickup = subjectId ? this.findEntity('moyuPickupId', subjectId) : undefined;
       // A missing container must not make the value seem lost. Recreate a
       // proxy at the collision point and send that visual to the Bank.
       const flyingPickup = pickup ?? this.createMoyuFlightProxy(x, y, value ?? 1);
-      this.flyMoyuToBank(flyingPickup, value ?? 1, done);
+      this.flyMoyuToBank(flyingPickup, credited, done);
       return;
     }
     if (type === 'kill') {
@@ -1465,14 +1496,14 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // Tall Spawn Slot: icon slightly above centre, value below. Empty remains a
     // visible empty slot rather than showing a fake plant.
     const slotCenter = this.getSpawnSlotCenter();
-    this.add.text(slotCenter.x, slotTop + 34, '出生槽', { fontSize: '24px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
+    this.add.text(slotCenter.x, slotTop + 34, '待部署办公用品', { fontSize: '20px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     if (visualBirthSlot !== null) {
       const bspr = this.addBreathingEntity(slotCenter.x, slotCenter.y - 35, PLANT_FRAME(visualBirthSlot), 110, 110, RENDER_DEPTH.UI, 3, 750, 'birth-slot');
       bspr.setData('birthSlot', true);
       const birthLabel = this.add.text(slotCenter.x, slotCenter.y + 126, String(visualBirthSlot), { fontSize: '36px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI + 1);
       bspr.setData('birthLabel', birthLabel);
     } else {
-      this.add.text(slotCenter.x, slotCenter.y + 12, '等待奖励球', { fontSize: '17px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
+      this.add.text(slotCenter.x, slotCenter.y + 12, '点击摸鱼账户提取', { fontSize: '16px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     }
 
     // Moyu Pickups are battle entities, not instant income. Each uses a small
@@ -1486,7 +1517,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       const ground = getCellGroundPoint(pickup.row, pickup.col, 'battlefield', CELL_METRICS);
       const px = ground.x + sh[0];
       const py = ground.y - ROW * .33 + sh[1];
-      const pspr = this.addBreathingEntity(px, py, 'moyu-icon', 62, 62, worldDepthForGround(ground.y, 6), 2, 600 + index * 70, pickup.id);
+      const pspr = this.addBreathingEntity(px, py, 'moyu-icon', 62, 62, worldDepthForGround(ground.y, 6), 2, 600 + index * 70, pickup.id, MOYU_PICKUP_META);
       pspr.setData('moyuPickupId', pickup.id);
       pspr.add(this.add.text(0, 0, String(pickup.value), { fontSize: '19px', color: '#17370f', stroke: '#eaffd9', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
     }
@@ -1527,6 +1558,11 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0).setDepth(placement.depth + 5);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
+      if ((e.moyuValue ?? 0) > 0) {
+        const badge = this.add.container(placement.x + Math.min(58, placement.displayWidth * .32), hpLabelY - 10).setDepth(placement.depth + 6);
+        badge.add(this.add.rectangle(0, 0, 66, 36, 0x2f6a29, .96).setStrokeStyle(2, 0xc8f07b, 1).setOrigin(.5));
+        badge.add(this.add.text(0, 0, `+${e.moyuValue}`, { fontSize: '20px', color: '#efffc8', stroke: '#17370f', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
+      }
     }
 
     this.refreshDifficultyPanel();

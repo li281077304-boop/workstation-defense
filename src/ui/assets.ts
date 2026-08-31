@@ -20,6 +20,13 @@ export const ART = {
     2048: 'assets/production/defenders/defender_2048_shredder.png',
     4096: 'assets/production/defenders/defender_4096_workstation_core.png',
   } as Record<(typeof DEFENDER_VALUES)[number], string>,
+  /** TEMP / EXPERIENCE ONLY — original office-pressure placeholders, not Production art. */
+  tempExperienceEnemies: {
+    basic01: 'assets/temp/experience-enemies/enemy_temp_kpi_agent.svg',
+    basic02: 'assets/temp/experience-enemies/enemy_temp_meeting_proxy.svg',
+    basic03: 'assets/temp/experience-enemies/enemy_temp_approval_drone.svg',
+    large01: 'assets/temp/experience-enemies/enemy_temp_overtime_system_large.svg',
+  },
   enemies: { basic01: 'assets/enemies/enemy_basic_01.png', basic02: 'assets/enemies/enemy_basic_02.png', large01: 'assets/enemies/enemy_large_01.png' },
   rewards: Object.fromEntries([1, 2, 4, 8].map(value => [value, `assets/rewards/reward_${value}.png`])),
   /**

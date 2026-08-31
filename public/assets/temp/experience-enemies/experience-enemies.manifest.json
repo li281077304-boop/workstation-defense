@@ -1,0 +1,10 @@
+{
+  "status": "TEMP_EXPERIENCE_ONLY",
+  "purpose": "V0.31 experience build replacement art for legacy zombie enemies",
+  "assets": [
+    { "id": "basic-01", "file": "enemy_temp_kpi_agent.svg", "semantic": "KPI pressure operative", "footprint": "1x1" },
+    { "id": "basic-02", "file": "enemy_temp_meeting_proxy.svg", "semantic": "meeting and calendar pressure proxy", "footprint": "1x1" },
+    { "id": "basic-03", "file": "enemy_temp_approval_drone.svg", "semantic": "approval and paperwork pressure drone", "footprint": "1x1" },
+    { "id": "large-01", "file": "enemy_temp_overtime_system_large.svg", "semantic": "overtime system pressure machine", "footprint": "2x2" }
+  ]
+}
