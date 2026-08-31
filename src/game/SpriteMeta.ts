@@ -81,8 +81,19 @@ export type CellMetrics = {
 
 /** Defender (办公用品/植物) 元数据 */
 export const DEFENDER_META: Record<number, SpriteMeta> = {
-  // value → meta 映射
-  // 目前所有 defender 共用同一套定位规则,后续可按 value 区分
+  1: { id: 'defender-1', ...defaultMeta },
+  2: { id: 'defender-2', ...defaultMeta },
+  4: { id: 'defender-4', ...defaultMeta },
+  8: { id: 'defender-8', ...defaultMeta },
+  16: { id: 'defender-16', ...defaultMeta },
+  32: { id: 'defender-32', ...defaultMeta },
+  64: { id: 'defender-64', ...defaultMeta },
+  128: { id: 'defender-128', ...defaultMeta },
+  256: { id: 'defender-256', ...defaultMeta },
+  512: { id: 'defender-512', ...defaultMeta },
+  1024: { id: 'defender-1024', ...defaultMeta },
+  2048: { id: 'defender-2048', ...defaultMeta },
+  4096: { id: 'defender-4096', ...defaultMeta },
 };
 
 /** Enemy 元数据 (按 skin key) */

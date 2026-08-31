@@ -1,0 +1,20 @@
+{
+  "source": "art/source/defenders/workstation_defenders_sheet_candidate_03_e7d7db46a2f2.png",
+  "sourceSha256": "e7d7db46a2f288b329fda723901c14792ab557806c3a67a659d3fa2f9a3cb799",
+  "padding": 14,
+  "assets": [
+    { "value": 1, "id": "pen", "crop": [75, 20, 335, 240] },
+    { "value": 2, "id": "glue", "crop": [360, 25, 560, 240] },
+    { "value": 4, "id": "fan", "crop": [595, 10, 860, 250] },
+    { "value": 8, "id": "thermos", "crop": [930, 25, 1120, 245] },
+    { "value": 16, "id": "energy", "crop": [1200, 25, 1400, 240] },
+    { "value": 32, "id": "stapler", "crop": [15, 340, 340, 540] },
+    { "value": 64, "id": "spray", "crop": [340, 335, 565, 530] },
+    { "value": 128, "id": "phone_stand", "crop": [590, 350, 850, 540] },
+    { "value": 256, "id": "laptop", "crop": [835, 315, 1175, 555] },
+    { "value": 512, "id": "monitor", "crop": [1170, 315, 1520, 560] },
+    { "value": 1024, "id": "printer", "crop": [0, 625, 420, 900] },
+    { "value": 2048, "id": "shredder", "crop": [400, 630, 720, 900] },
+    { "value": 4096, "id": "workstation_core", "crop": [700, 640, 1530, 930] }
+  ]
+}

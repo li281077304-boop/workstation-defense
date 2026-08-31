@@ -40,6 +40,20 @@ focused test in the same change before treating the implementation as complete.
 - `TODO.md` tracks work only; it is not a rule source.
 - `PROJECT_HANDOFF.md` and `DEVLOG.md` are historical/reference material.
 
+## Asset Ingestion Rule
+
+When the user explicitly approves artwork (for example, “就这个”, “采用”,
+“正式使用”, “扶正”, “这个版本可以”, or “用这张”), do not leave it only in
+Downloads, `/tmp`, a chat attachment, or a candidate-generation directory.
+Before reporting art as complete, finish this chain:
+
+`SOURCE INGESTION → CANDIDATE/APPROVED STATE → PRODUCTION GENERATION → MANIFEST → RUNTIME OR EXPLICIT PENDING → GIT`
+
+Never overwrite a Production asset straight from Downloads. Ingest the immutable
+source first, update its manifest lineage, and preserve the Git history. Runtime
+may only reference `APPROVED_PRODUCTION` assets. If the chain is incomplete,
+state **ART NOT INGESTED** rather than claiming the artwork is finished.
+
 ## Scope guardrails
 
 Do not introduce levels, shops, gacha, upgrade trees, equipment, skills, ads,
