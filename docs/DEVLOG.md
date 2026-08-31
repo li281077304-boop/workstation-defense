@@ -232,4 +232,4 @@
 - Enemy skin 改为稳定的纯视觉分配；旧存档的旧 skin ID 会映射到新敌人图，绝不回退加载僵尸或 TEMP 体验占位图。
 - 未找回可用办公室背景，生成一张原创办公室地面候选并通过 `build-background-assets.py` 建立 Source → Review Runtime 血缘；状态为 `PRODUCTION_CANDIDATE_REVIEW`，等待用户肉眼批准。
 - 扩展资产检查：验证 13 Defender、8 Enemy、来源 SHA、派生 SHA、运行时旧僵尸/乡村引用，以及候选背景的“有效但待批准”状态。
-- 验证：`npm run check:assets`、95 条测试和 Web Production Build 通过。Android Web 资源同步通过；本机未安装 JDK，故本轮没有伪造或产出 V0.33 Art Review APK。
+- 验证：`npm run check:assets`、95 条测试和 Web Production Build 通过。Android Web 资源同步通过；使用本机现有的临时 Temurin JDK 21 成功构建 V0.33 Art Review APK（30,837,484 bytes，SHA-256 `2a1e48c4ec024143504312b4f52cc1b4bb9362a12a2e7c4d7ab88dceecfe60a2`）。
