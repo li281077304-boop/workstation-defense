@@ -41,6 +41,13 @@ export type SpriteMeta = {
 
   /** 深度偏移. 正值→画在更上层. 用于同格多实体前后排序. */
   depthBias?: number;
+
+  /** Runtime-only contact-shadow tuning. Defaults work for all 1×1 units. */
+  shadowScaleX?: number;
+  shadowScaleY?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowAlpha?: number;
 };
 
 /** 创建默认 SpriteMeta (1×1 单位,底部中心 pivot) */
@@ -50,6 +57,11 @@ export const defaultMeta: Omit<SpriteMeta, 'id'> = {
   pivotX: 0.5,
   pivotY: 1.0,
   artScale: 1.0,
+  shadowScaleX: 0.72,
+  shadowScaleY: 0.20,
+  shadowOffsetX: 0,
+  shadowOffsetY: -2,
+  shadowAlpha: 0.28,
 };
 
 /**

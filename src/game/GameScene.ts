@@ -8,8 +8,8 @@ import { ART, PLANT_VALUES } from '../ui/assets';
 import { Sfx, ensureAudio } from '../sound';
 import { getAudioManager } from '../audio/AudioManager';
 import { addLocalRecord, loadLocalRecords } from '../records/LocalRecords';
-import { createCellMetrics, placeDefender, placeEnemy, getCellGroundPoint, placeSprite, type PlacementResult } from './SpritePlacement';
-import { defaultMeta, getEnemyMeta, type SpriteMeta } from './SpriteMeta';
+import { createCellMetrics, placeDefender, placeEnemy, getCellGroundPoint, placeSprite, type PlacementResult, RENDER_DEPTH, worldDepthForGround } from './SpritePlacement';
+import { defaultMeta, getEnemyMeta, DEFENDER_META, type SpriteMeta } from './SpriteMeta';
 
 const LEFT = L.board.defenseLeft, TOP = L.board.top, ROW = L.board.rowHeight;
 const defenseX = (col: number) => LEFT + col * L.board.defenseCellWidth;
@@ -30,7 +30,7 @@ type RunSummary = { score: number; turn: number; plantPower: number; firepowerUt
 /** Map plant value → standalone image key. */
 const PLANT_FRAME = (value: number): string => {
   const v = [...PLANT_VALUES].reverse().find(n => value >= n) ?? 1;
-  return `plant-${v}`;
+  return `defender-${v >= 8192 ? 4096 : v}`;
 };
 
 /** Cosmetic only: skin is stable and deliberately never reads HP or combat values. */
@@ -54,7 +54,7 @@ const projectileVisualScale = (damage: number) => PROJECTILE_VISUAL_SCALE[[...PR
 
 /** Standalone image key → asset path (complete PNGs; placeholder art is fine). */
 const IMAGES: [string, string][] = [
-  ...PLANT_VALUES.map<[string, string]>(v => [`plant-${v}`, `assets/plants/plant_${String(v).padStart(3, '0')}.png`]),
+  ...PLANT_VALUES.map<[string, string]>(v => [`defender-${v}`, ART.defenders[(v >= 8192 ? 4096 : v) as keyof typeof ART.defenders]]),
   ['moyu-icon', ART.moyuIcon],
   ...PROJECTILE_VALUES.map<[string, string]>(value => [`moyu-projectile-${value}`, ART.projectiles[value]]),
   ['enemy-basic-01', 'assets/enemies/enemy_basic_01.png'],
@@ -72,8 +72,6 @@ const IMAGES: [string, string][] = [
   ['effect-hit-purple', 'assets/effects/effect_hit_purple.png'],
   ['effect-smoke-01', 'assets/effects/effect_smoke_01.png'],
   ['effect-smoke-02', 'assets/effects/effect_smoke_02.png'],
-  ['defense-cell-v1', 'assets/tiles/defense_cell_v1.png'],
-  ['battlefield-cell-v1', 'assets/tiles/battlefield_cell_v1.png'],
 ];
 
 /** Scale a sprite to fit within (maxW, maxH) while preserving aspect ratio. */
@@ -131,13 +129,13 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   }
 
   preload() {
-    this.load.image('battlefield-v0', 'assets/backgrounds/battlefield_v0.png');
     for (const [key, path] of IMAGES) this.load.image(key, path);
   }
 
   create() {
     // Fresh manager every scene (re)start — otherwise gameOver state leaks and restart never works.
     this.startFreshRun();
+    if (new URLSearchParams(window.location.search).get('visualReview')) this.seedVisualReviewState();
     this.productPanel?.remove();
     this.productPanel = null;
     this.gameOverRecorded = false;
@@ -161,7 +159,36 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.createDifficultyPanel();
     this.render();
     this.installBackgroundSaveHandlers();
-    this.openMainMenu();
+    if (!new URLSearchParams(window.location.search).get('visualReview')) this.openMainMenu();
+  }
+
+  /** Dev-only render fixture. It never runs in a normal saved game or changes rules. */
+  private seedVisualReviewState() {
+    const s = this.manager.state;
+    const overlapReview = new URLSearchParams(window.location.search).get('visualReview') === 'overlap';
+    const values = [1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+    for (let r = 0; r < BOARD.rows; r++) for (let c = 0; c < BOARD.defenseCols; c++) {
+      const value = values[r * BOARD.defenseCols + c];
+      s.plants[r][c] = { id: `review-def-${r}-${c}`, value };
+    }
+    s.enemies = overlapReview
+      ? [
+          { id: 'review-e-back', row: 0, col: 7, width: 1, height: 1, hp: 20, maxHp: 20, skin: 'enemy-basic-01' },
+          { id: 'review-large', row: 1, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
+          { id: 'review-e-front', row: 3, col: 7, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
+        ]
+      : [
+          { id: 'review-e1', row: 0, col: 6, width: 1, height: 1, hp: 12, maxHp: 12, skin: 'enemy-basic-01' },
+          { id: 'review-e2', row: 1, col: 4, width: 1, height: 1, hp: 20, maxHp: 20, skin: 'enemy-basic-02' },
+          { id: 'review-e3', row: 3, col: 5, width: 1, height: 1, hp: 28, maxHp: 28, skin: 'enemy-basic-03' },
+          { id: 'review-large', row: 2, col: 7, width: 2, height: 2, hp: 88, maxHp: 88, skin: 'enemy-large-moss' },
+        ];
+    s.moyuPickups = [{ id: 'review-moyu', row: 3, col: 3, value: 8, isCollected: false, spawnTurn: 0 }];
+    s.birthSlot = 4;
+    s.moyuBank = 8;
+    s.highestDefenderValue = 2048;
+    this.visualBirthSlot = 4;
+    this.visualMoyuBank = 8;
   }
 
   /** New games always replace any stale current-run record before first save. */
@@ -782,7 +809,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private animateOneFlight(f: Flight, done: () => void) {
     const startX = L.board.battlefieldLeft - 20;
     const y = TOP + f.lane * ROW + ROW / 2;
-    const bullet = this.add.sprite(startX, y, f.frame).setDepth(50);
+    const bullet = this.add.sprite(startX, y, f.frame).setDepth(RENDER_DEPTH.PROJECTILE + f.lane * 10);
     const scale = projectileVisualScale(Number(f.frame.split('-').at(-1)) || 1);
     fitSprite(bullet, 76 + scale * 66, 18 + scale * 38);
 
@@ -817,7 +844,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       // still has. Core already added its value to the Bank; this is strictly
       // a presentation hand-off, never a second economic mutation.
       Sfx.capture();
-      const fx = this.add.sprite(x, y, 'effect-merge').setDepth(60);
+      const fx = this.add.sprite(x, y, 'effect-merge').setDepth(RENDER_DEPTH.FX + 20);
       fx.setDisplaySize(110, 110);
       this.tweens.add({ targets: fx, scale: 1.7, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => fx.destroy() });
       if (value) this.floatText(x, y - 16, `+${value} 摸鱼`, '#9dff6e');
@@ -832,14 +859,14 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     if (type === 'kill') {
       // Enemy defeated: smoke puff
       Sfx.kill();
-      const fx = this.add.sprite(x, y - 10, 'effect-smoke-01').setDepth(60);
+      const fx = this.add.sprite(x, y - 10, 'effect-smoke-01').setDepth(RENDER_DEPTH.FX + 20);
       fx.setDisplaySize(120, 120);
       this.tweens.add({ targets: fx, scale: 1.9, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => { fx.destroy(); if (subjectId) this.findEntity('enemyId', subjectId)?.destroy(); done(); } });
       return;
     }
     // Plain hit / pierce: quick impact flash
     Sfx.hit();
-    const fx = this.add.sprite(x, y, 'effect-hit-green').setDepth(60);
+    const fx = this.add.sprite(x, y, 'effect-hit-green').setDepth(RENDER_DEPTH.FX + 20);
     fx.setDisplaySize(70, 70);
     this.tweens.add({ targets: fx, scale: 1.7, alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => fx.destroy() });
     this.time.delayedCall(90, () => { if (subjectId && hpAfter !== undefined) this.updateEnemyHp(subjectId, hpAfter); });
@@ -848,13 +875,30 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
   /** Small text that floats up and fades out. */
   private floatText(x: number, y: number, text: string, color: string) {
-    const t = this.add.text(x, y, text, { fontSize: '34px', color, stroke: '#1a1a1a', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(70);
+    const t = this.add.text(x, y, text, { fontSize: '34px', color, stroke: '#1a1a1a', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.FX + 40);
     this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => t.destroy() });
   }
 
   /** Logical position stays on the container; a frame-driven child offset never resets between turns. */
-  private addBreathingEntity(x: number, y: number, frame: string, maxW: number, maxH: number, depth: number, amp: number, duration: number, phaseKey: string) {
+  private addBreathingEntity(
+    x: number, y: number, frame: string, maxW: number, maxH: number, depth: number, amp: number, duration: number, phaseKey: string,
+    shadow?: Pick<SpriteMeta, 'shadowScaleX' | 'shadowScaleY' | 'shadowOffsetX' | 'shadowOffsetY' | 'shadowAlpha'>,
+  ) {
     const container = this.add.container(x, y).setDepth(depth);
+    if (shadow) {
+      const shadowWidth = Math.max(32, maxW * (shadow.shadowScaleX ?? 0.72));
+      const shadowHeight = Math.max(10, maxW * (shadow.shadowScaleY ?? 0.20));
+      const contactShadow = this.add.ellipse(
+        shadow.shadowOffsetX ?? 0,
+        shadow.shadowOffsetY ?? -2,
+        shadowWidth,
+        shadowHeight,
+        0x07131d,
+        shadow.shadowAlpha ?? 0.28,
+      );
+      container.add(contactShadow);
+      container.setData('contactShadow', contactShadow);
+    }
     const sprite = this.add.sprite(0, 0, frame);
     fitSprite(sprite, maxW, maxH);
     container.add(sprite);
@@ -893,7 +937,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
   /** Fallback visual used only if a pickup container was rebuilt unexpectedly. */
   private createMoyuFlightProxy(x: number, y: number, value: number) {
-    const proxy = this.add.container(x, y).setDepth(55);
+    const proxy = this.add.container(x, y).setDepth(RENDER_DEPTH.PROJECTILE + 5);
     const sprite = this.add.sprite(0, 0, 'moyu-icon');
     fitSprite(sprite, 56, 56);
     proxy.add(sprite);
@@ -941,7 +985,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   /** Visible player resource bank. One tap extracts the largest affordable unit. */
   private renderMoyuBankHud(value: number) {
     const bounds = this.moyuBankBounds();
-    const bank = this.add.container(0, 0).setDepth(40);
+    const bank = this.add.container(0, 0).setDepth(RENDER_DEPTH.UI + 20);
     bank.setData('moyuBankHud', true);
     const capacity = this.manager.moyuCapacity();
     const full = value >= capacity;
@@ -1209,7 +1253,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
    */
   private openSpriteLab() {
     this.closeSpriteLab();
-    const layer = this.add.container(0, 0).setDepth(500);
+    const layer = this.add.container(0, 0).setDepth(RENDER_DEPTH.DEBUG);
     this.spriteLabLayer = layer;
 
     const g = this.add.graphics().setDepth(501);
@@ -1238,8 +1282,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
     // 测试精灵组
     const testCases: Array<{ label: string; row: number; col: number; gridType: 'defense' | 'battlefield'; meta: SpriteMeta; frame: string; color: number }> = [
-      { label: 'Defender\n(标准)', row: 1, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-def' }, frame: 'plant-1', color: 0x00ff00 },
-      { label: 'Defender\n(大)', row: 3, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-big', artScale: 1.15 }, frame: 'plant-256', color: 0x88ff00 },
+      { label: 'Defender\n(标准)', row: 1, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-def' }, frame: 'defender-1', color: 0x00ff00 },
+      { label: 'Defender\n(大)', row: 3, col: 0, gridType: 'defense', meta: { ...defaultMeta, id: 'test-big', artScale: 1.05 }, frame: 'defender-256', color: 0x88ff00 },
       { label: 'Enemy\n1x1', row: 1, col: 0, gridType: 'battlefield', meta: { ...defaultMeta, id: 'test-e1' }, frame: 'enemy-basic-01', color: 0xff8800 },
       { label: 'Enemy\n2x2', row: 2, col: 0, gridType: 'battlefield', meta: { ...defaultMeta, id: 'test-e2', footprintW: 2, footprintH: 2 }, frame: 'enemy-large-01', color: 0xff0088 },
     ];
@@ -1247,7 +1291,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     for (const tc of testCases) {
       const p = placeSprite({ row: tc.row, col: tc.col, gridType: tc.gridType, meta: tc.meta, metrics: CELL_METRICS });
       // 测试精灵容器
-      const container = this.add.container(p.x, p.y).setDepth(510);
+      const container = this.add.container(p.x, p.y);
       layer.add(container);
 
       const sprite = this.add.sprite(0, 0, tc.frame);
@@ -1256,6 +1300,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       sprite.setOrigin(p.originX, p.originY);
       sprite.setAlpha(0.85);
       container.add(sprite);
+
+      const shadowW = Math.max(32, p.displayWidth * (tc.meta.shadowScaleX ?? .72));
+      const shadowH = Math.max(10, p.displayWidth * (tc.meta.shadowScaleY ?? .20));
+      const shadowBounds = this.add.ellipse(tc.meta.shadowOffsetX ?? 0, tc.meta.shadowOffsetY ?? -2, shadowW, shadowH, 0x07131d, .24)
+        .setStrokeStyle(1, 0xffd64a, .85);
+      container.addAt(shadowBounds, 0);
 
       // Bounds 边框
       const bw = sprite.displayWidth, bh = sprite.displayHeight;
@@ -1267,19 +1317,19 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       container.add(bounds);
 
       // 标签
-      const label = this.add.text(0, -p.displayHeight * 0.55, tc.label, {
+      const label = this.add.text(0, -p.displayHeight * 0.60, `${tc.label}\nLane ${tc.row + 1} · depth ${p.depth}\n${tc.meta.footprintW}×${tc.meta.footprintH} · pivot ${p.originX},${p.originY}`, {
         fontSize: '16px', color: '#fff', stroke: '#000', strokeThickness: 4, fontStyle: 'bold',
       }).setOrigin(0.5).setDepth(511);
       container.add(label);
 
       // Ground Point 十字标记
-      const crossH = this.add.line(p.groundX - 12, p.groundY, p.groundX + 12, p.groundY, 0xff0000, 1).setDepth(511);
-      const crossV = this.add.line(p.groundX, p.groundY - 12, p.groundX, p.groundY + 12, 0xff0000, 1).setDepth(511);
+      const crossH = this.add.line(p.groundX - 12, p.groundY, p.groundX + 12, p.groundY, 0xff0000, 1);
+      const crossV = this.add.line(p.groundX, p.groundY - 12, p.groundX, p.groundY + 12, 0xff0000, 1);
       layer.add(crossH); layer.add(crossV);
     }
 
     // 图例
-    const legend = this.add.text(20, TOP, `Sprite Lab Lite\n━━━━━━━━━━\n🟢 Defense Grid\n🔵 Battlefield Grid\n🔴 Ground Point\n⬜ Sprite Bounds`, {
+    const legend = this.add.text(20, TOP, `Sprite Lab Lite\n━━━━━━━━━━\n🟢 Defense Grid\n🔵 Battlefield Grid\n🔴 Ground Point\n⬜ Sprite Bounds\n🟡 Shadow Bounds\nLabels: Lane · Final depth · Footprint · Pivot`, {
       fontSize: '16px', color: '#f7f1d0', stroke: '#000', strokeThickness: 4,
     }).setOrigin(0, 0).setDepth(520);
     layer.add(legend);
@@ -1291,6 +1341,62 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     layer.add(hint);
 
     this.spriteLabVisible = true;
+  }
+
+  /**
+   * TEMP / REVIEW ONLY: a procedural office floor for validating placement,
+   * overlap and lighting before a real Production office background is approved.
+   */
+  private renderTemporaryOfficeBackground() {
+    const g = this.add.graphics().setDepth(0);
+    g.fillStyle(0x0d1722, 1).fillRect(0, 0, L.width, L.height);
+    // Far wall, windows and warm ceiling pools: shallow office perspective.
+    g.fillStyle(0x172a3b, 1).fillRect(0, 118, L.width, 178);
+    g.fillStyle(0x0a1420, 1).fillRect(190, 140, 1530, 132);
+    for (let x = 220; x < 1700; x += 220) {
+      g.fillStyle(0x183b5b, .92).fillRect(x, 150, 176, 104);
+      g.fillStyle(0x6eaed2, .16).fillRect(x + 10, 160, 156, 84);
+      g.fillStyle(0xd8b675, .24).fillRoundedRect(x + 24, 112, 128, 16, 8);
+      g.fillStyle(0xffffff, .07).fillRoundedRect(x + 34, 115, 108, 5, 3);
+    }
+    // Distant low-contrast desks and screens remain above the playable floor.
+    for (let x = 260; x < 1680; x += 285) {
+      g.fillStyle(0x203343, .9).fillRoundedRect(x, 258, 165, 26, 5);
+      g.fillStyle(0x2e668b, .5).fillRect(x + 34, 218, 78, 37);
+      g.fillStyle(0xe3bd76, .14).fillRect(x + 12, 282, 140, 7);
+    }
+    // Open office floor — deliberately unified behind both grids.
+    g.fillStyle(0x263746, 1).fillRect(0, 286, L.width, L.height - 286);
+    g.fillStyle(0x304656, .34).fillRect(0, TOP, L.width, L.height - TOP);
+    // Warm defender side fades into neutral central aisle and restrained red entry edge.
+    g.fillGradientStyle(0x936c37, 0x936c37, 0x284353, 0x284353, .20, .20, .08, .08)
+      .fillRect(L.board.defenseLeft - 18, TOP, L.board.battlefieldLeft + L.board.battlefieldCellWidth * BOARD.battlefieldCols - L.board.defenseLeft + 36, ROW * BOARD.rows);
+    g.fillStyle(0x9b3133, .12).fillRect(1845, 286, 75, 744);
+    // Subtle floor seams converge on the far office wall. They sell a shallow
+    // 30° floor plane without changing any orthogonal gameplay coordinates.
+    for (let x = -240; x <= L.width + 240; x += 240) {
+      g.lineStyle(1, 0xc3d4dc, .045).lineBetween(960 + (x - 960) * .28, 286, x, L.height);
+    }
+    g.lineStyle(2, 0xe0bc7a, .11).lineBetween(0, 286, L.width, 286);
+    // Readable floor information, not UI tiles: lanes stronger than columns.
+    for (let row = 0; row < BOARD.rows; row++) {
+      const y = TOP + row * ROW;
+      g.fillStyle(row % 2 ? 0x5d7988 : 0x416373, .075).fillRect(L.board.defenseLeft, y, 1650, ROW);
+      g.lineStyle(2, 0xd6e4e7, .18).lineBetween(L.board.defenseLeft, y, L.board.battlefieldLeft + L.board.battlefieldCellWidth * BOARD.battlefieldCols, y);
+      g.lineStyle(1, 0x1d2d38, .28).lineBetween(L.board.defenseLeft, y + ROW - 1, L.board.battlefieldLeft + L.board.battlefieldCellWidth * BOARD.battlefieldCols, y + ROW - 1);
+    }
+    for (let col = 0; col <= BOARD.battlefieldCols; col++) {
+      const x = L.board.battlefieldLeft + col * L.board.battlefieldCellWidth;
+      g.lineStyle(1, 0xc6d7dd, .075).lineBetween(x, TOP, x, TOP + ROW * BOARD.rows);
+    }
+    // Defender deployment cues are ground light, not blue UI cards.
+    for (let row = 0; row < BOARD.rows; row++) for (let col = 0; col < BOARD.defenseCols; col++) {
+      const gp = getCellGroundPoint(row, col, 'defense', CELL_METRICS);
+      g.fillStyle(0x8cd8e7, .09).fillEllipse(gp.x, gp.y - 4, 112, 31);
+    }
+    // Edge-only foreground clutter / cables; no interruption of board cells.
+    g.lineStyle(3, 0x18212c, .65).lineBetween(10, 1050, 200, 1038).lineBetween(1740, 1055, 1910, 1022);
+    this.add.text(1890, 142, 'TEMP OFFICE · REVIEW ONLY', { fontSize: '16px', color: '#b7d8ea' }).setAlpha(.62).setOrigin(1, 0).setDepth(RENDER_DEPTH.FLOOR + 1);
   }
 
   /* ─── Sprite-based rendering ─── */
@@ -1308,14 +1414,10 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const visualBirthSlot = visualStart?.birthSlot ?? this.visualBirthSlot;
     const visualMoyuBank = visualStart?.moyuBank ?? this.visualMoyuBank;
 
-    // Background (bottom layer)
-    this.add.image(L.width / 2, L.height / 2, 'battlefield-v0').setDisplaySize(L.width, L.height).setDepth(0);
+    this.renderTemporaryOfficeBackground();
 
-    // Board overlay tint
-    const g = this.add.graphics().setDepth(1);
-    g.fillStyle(0x123129, .25).fillRect(0, 0, L.width, L.height);
-    g.fillStyle(0x183d35, .45).fillRoundedRect(20, 132, L.board.battlefieldLeft - 40, 918, 22);
-    g.fillStyle(0x4c382b, .55).fillRoundedRect(L.board.battlefieldLeft - 14, 132, L.width - L.board.battlefieldLeft - 26, 918, 22);
+    // Interaction/UI marks stay above the world; they do not define its geometry.
+    const g = this.add.graphics().setDepth(RENDER_DEPTH.UI - 10);
 
     // One continuous tall Spawn Slot, centered on Defense Row 3. It is drawn
     // even while empty so its full hit area remains obvious to the player.
@@ -1326,24 +1428,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     g.lineStyle(2, 0x6d4a27, .9).strokeRoundedRect(slot.left + 10, slotTop + 10, slot.width - 20, slot.height - 20, 21);
 
     // UI text
-    this.add.text(960, L.header.scoreY, `分数 ${s.score.toLocaleString()}`, { fontSize: '46px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 8 }).setOrigin(.5, 0).setDepth(10);
-    this.add.text(L.header.settingsX, 30, '⚙', { fontSize: '50px', color: '#e4efe8' }).setDepth(10);
+    this.add.text(960, L.header.scoreY, `分数 ${s.score.toLocaleString()}`, { fontSize: '46px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 8 }).setOrigin(.5, 0).setDepth(RENDER_DEPTH.UI);
+    this.add.text(L.header.settingsX, 30, '⚙', { fontSize: '50px', color: '#e4efe8' }).setDepth(RENDER_DEPTH.UI);
     this.renderMoyuBankHud(visualMoyuBank);
 
-    // Grid lanes & cells
-    for (let r = 0; r < BOARD.rows; r++) {
-      const y = TOP + r * ROW;
-      const laneColor = r % 2 ? 0x34543a : 0x3b6140;
-      g.fillStyle(laneColor, .75).fillRect(L.board.battlefieldLeft, y, BOARD.battlefieldCols * L.board.battlefieldCellWidth, ROW);
-      for (let c = 0; c < BOARD.defenseCols; c++) {
-        const x = defenseX(c);
-        this.add.image(x + L.board.defenseCellWidth / 2, y + ROW / 2, 'defense-cell-v1').setDisplaySize(150, 160).setDepth(2);
-      }
-      for (let c = 0; c < BOARD.battlefieldCols; c++) {
-        const x = fieldX(c);
-        this.add.image(x + L.board.battlefieldCellWidth / 2, y + ROW / 2, 'battlefield-cell-v1').setDisplaySize(L.board.battlefieldCellWidth - 6, 150).setDepth(2);
-      }
-    }
+    // Defense deployment is expressed by the floor-light ellipses in the
+    // temporary office scene. Do not redraw ten UI-card rectangles on top.
 
     // Plants — sprite based (统一 Placement 系统: Ground Point + Bottom-Center Pivot)
     for (let r = 0; r < BOARD.rows; r++) {
@@ -1351,19 +1441,19 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
         const p = s.plants[r][c];
         if (!p) continue;
         // 使用统一 Placement 引擎计算位置/缩放/深度
-        const placement = placeDefender(r, c, CELL_METRICS);
+        const placement = placeDefender(r, c, CELL_METRICS, DEFENDER_META[p.value]);
         const frame = PLANT_FRAME(p.value);
         const entity = this.addBreathingEntity(
           placement.x, placement.y, frame,
           placement.displayWidth, placement.displayHeight,
-          placement.depth, 3, 700 + (r * 80 + c * 45), p.id
+          placement.depth, 3, 700 + (r * 80 + c * 45), p.id, DEFENDER_META[p.value]
         );
         // 设置 bottom-center pivot (pivotY=1.0 = 脚底对齐 Ground Point)
         const sprite = entity.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
         if (sprite) sprite.setOrigin(placement.originX, placement.originY);
 
         // Value label on top (相对 Ground Point 向上偏移)
-        this.add.text(placement.x, placement.groundY - 62, String(p.value), { fontSize: '28px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(21);
+        this.add.text(placement.x, placement.groundY - 62, String(p.value), { fontSize: '28px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(placement.depth + 4);
 
         // Selection highlight
         if (this.selected !== 'birth' && this.selected?.row === r && this.selected.col === c) {
@@ -1375,14 +1465,14 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // Tall Spawn Slot: icon slightly above centre, value below. Empty remains a
     // visible empty slot rather than showing a fake plant.
     const slotCenter = this.getSpawnSlotCenter();
-    this.add.text(slotCenter.x, slotTop + 34, '出生槽', { fontSize: '24px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(10);
+    this.add.text(slotCenter.x, slotTop + 34, '出生槽', { fontSize: '24px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     if (visualBirthSlot !== null) {
-      const bspr = this.addBreathingEntity(slotCenter.x, slotCenter.y - 35, PLANT_FRAME(visualBirthSlot), 110, 110, 20, 3, 750, 'birth-slot');
+      const bspr = this.addBreathingEntity(slotCenter.x, slotCenter.y - 35, PLANT_FRAME(visualBirthSlot), 110, 110, RENDER_DEPTH.UI, 3, 750, 'birth-slot');
       bspr.setData('birthSlot', true);
-      const birthLabel = this.add.text(slotCenter.x, slotCenter.y + 126, String(visualBirthSlot), { fontSize: '36px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(21);
+      const birthLabel = this.add.text(slotCenter.x, slotCenter.y + 126, String(visualBirthSlot), { fontSize: '36px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI + 1);
       bspr.setData('birthLabel', birthLabel);
     } else {
-      this.add.text(slotCenter.x, slotCenter.y + 12, '等待奖励球', { fontSize: '17px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(10);
+      this.add.text(slotCenter.x, slotCenter.y + 12, '等待奖励球', { fontSize: '17px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     }
 
     // Moyu Pickups are battle entities, not instant income. Each uses a small
@@ -1393,11 +1483,23 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       stacks.set(key, index + 1);
       const shift: [number, number][] = [[-20, -12], [0, 0], [20, 12]];
       const sh = shift[index % 3];
-      const px = fieldX(pickup.col) + L.board.battlefieldCellWidth / 2 + sh[0];
-      const py = TOP + pickup.row * ROW + ROW / 2 + sh[1];
-      const pspr = this.addBreathingEntity(px, py, 'moyu-icon', 62, 62, 22, 2, 600 + index * 70, pickup.id);
+      const ground = getCellGroundPoint(pickup.row, pickup.col, 'battlefield', CELL_METRICS);
+      const px = ground.x + sh[0];
+      const py = ground.y - ROW * .33 + sh[1];
+      const pspr = this.addBreathingEntity(px, py, 'moyu-icon', 62, 62, worldDepthForGround(ground.y, 6), 2, 600 + index * 70, pickup.id);
       pspr.setData('moyuPickupId', pickup.id);
       pspr.add(this.add.text(0, 0, String(pickup.value), { fontSize: '19px', color: '#17370f', stroke: '#eaffd9', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
+    }
+
+    // The review route is a frozen visual test board. Keep one projectile in
+    // view so layering can be checked without running a real combat turn.
+    if (new URLSearchParams(window.location.search).get('visualReview')) {
+      const projectileGround = getCellGroundPoint(2, 3, 'battlefield', CELL_METRICS);
+      const projectile = this.add.sprite(projectileGround.x, projectileGround.y - ROW * .46, projectileFrame(64))
+        .setOrigin(.5)
+        .setDepth(RENDER_DEPTH.PROJECTILE + 20);
+      const projectileScale = projectileVisualScale(64);
+      projectile.setDisplaySize(92 * projectileScale, 68 * projectileScale);
     }
 
     // Enemies — sprite based (统一 Placement 系统: Ground Point + Bottom-Center Pivot)
@@ -1410,7 +1512,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
         placement.x, placement.y, visual.frame,
         placement.displayWidth, placement.displayHeight,
         placement.depth, e.width === 2 ? 4 : 3,
-        750 + e.row * 65, e.id
+        750 + e.row * 65, e.id, enemyMeta
       );
       // 设置 bottom-center pivot
       const spr = espr.list.find((item): item is Phaser.GameObjects.Sprite => item instanceof Phaser.GameObjects.Sprite);
@@ -1422,7 +1524,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
 
       // HP label (相对 Ground Point 向上偏移)
       const hpLabelY = placement.groundY - (e.height * ROW) * 0.22;
-      const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0);
+      const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0).setDepth(placement.depth + 5);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
     }

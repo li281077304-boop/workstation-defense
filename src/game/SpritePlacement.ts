@@ -16,11 +16,28 @@ import type { SpriteMeta, CellMetrics } from './SpriteMeta';
 
 // ──── 常量 ────
 
-/** 普通 1×1 单位目标宽度占格子宽度的比例 */
-const NORMAL_UNIT_WIDTH_RATIO = 0.76;
+/** Defender can be visually substantial without changing its logical 1×1 cell. */
+const DEFENDER_UNIT_WIDTH_RATIO = 0.90;
+/** Human-sized enemies deliberately read larger than the office-item defenders. */
+const BATTLEFIELD_UNIT_WIDTH_RATIO = 1.15;
 
 /** 允许超出格子高度的最大比例(人物可以向上伸出) */
 const MAX_HEIGHT_OVERFLOW_RATIO = 1.6;
+
+/** Stable bands: background/floor < world rows < projectiles/FX < HUD/debug. */
+export const RENDER_DEPTH = {
+  FLOOR: 100,
+  WORLD_BASE: 1000,
+  PROJECTILE: 20000,
+  FX: 21000,
+  UI: 30000,
+  DEBUG: 40000,
+} as const;
+
+/** Bottom Ground Y is the only normal world sort key; creation order is irrelevant. */
+export function worldDepthForGround(groundY: number, depthBias: number = 0): number {
+  return RENDER_DEPTH.WORLD_BASE + Math.round(groundY * 10) + depthBias;
+}
 
 // ──── 类型 ────
 
@@ -120,7 +137,7 @@ export function calculateBaseScale(
 ): number {
   if (spriteWidth <= 0 || spriteHeight <= 0) return 1.0;
 
-  const targetW = cellW * NORMAL_UNIT_WIDTH_RATIO;
+  const targetW = cellW * DEFENDER_UNIT_WIDTH_RATIO;
   const targetH = cellH * MAX_HEIGHT_OVERFLOW_RATIO;
 
   const scaleX = targetW / spriteWidth;
@@ -155,6 +172,7 @@ export function placeSprite(params: {
 
   const cellW = gridType === 'defense' ? metrics.defenseCellWidth : metrics.battlefieldCellWidth;
   const cellH = metrics.rowHeight;
+  const widthRatio = gridType === 'defense' ? DEFENDER_UNIT_WIDTH_RATIO : BATTLEFIELD_UNIT_WIDTH_RATIO;
 
   // Step 1: Ground Point
   const ground = getCellGroundPoint(row, col, gridType, metrics, meta.footprintW, meta.footprintH);
@@ -170,13 +188,11 @@ export function placeSprite(params: {
   const finalY = ground.y + (meta.groundOffsetY ?? 0);
 
   // Step 6: Depth (越靠下=越大=画在上层)
-  const baseDepth = gridType === 'defense' ? 20 : 30;
-  const depthFine = Math.round((ground.y % 1) * 100);
-  const depth = baseDepth + (meta.depthBias ?? 0) + depthFine;
+  const depth = worldDepthForGround(ground.y, meta.depthBias ?? 0);
 
   // Display size for fitSprite
-  const displayWidth = cellW * meta.footprintW * NORMAL_UNIT_WIDTH_RATIO;
-  const displayHeight = cellH * meta.footprintH * MAX_HEIGHT_OVERFLOW_RATIO;
+  const displayWidth = cellW * meta.footprintW * widthRatio * meta.artScale;
+  const displayHeight = cellH * meta.footprintH * MAX_HEIGHT_OVERFLOW_RATIO * meta.artScale;
 
   return {
     x: finalX,

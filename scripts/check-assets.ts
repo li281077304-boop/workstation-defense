@@ -32,7 +32,15 @@ const office = manifest.assets.find(asset => asset.id === 'BACKGROUND_OFFICE_V1'
 if (!office || office.status !== 'APPROVED_PRODUCTION') errors.push('Office background is not APPROVED_PRODUCTION; production runtime migration is intentionally blocked.');
 else if (!existsSync(resolve(root, office.productionPath))) errors.push('Approved office background file is missing.');
 const assetsTs = readFileSync(resolve(root, 'src/ui/assets.ts'), 'utf8');
-if (!assetsTs.includes('ART.defenders') || !assetsTs.includes('assets/production/defenders/')) errors.push('Runtime Defender mapping has not yet switched to Production assets.');
-if (!assetsTs.includes('assets/production/backgrounds/')) errors.push('Runtime background mapping has not yet switched to Production assets.');
+const gameScene = readFileSync(resolve(root, 'src/game/GameScene.ts'), 'utf8');
+if (!assetsTs.includes('defenders:') || !assetsTs.includes('assets/production/defenders/') || !gameScene.includes('ART.defenders')) {
+  errors.push('Runtime Defender mapping has not yet switched to Production assets.');
+}
+// The approved office background is intentionally still missing. While that
+// remains true, the runtime must use only the TEMP / REVIEW procedural scene,
+// not silently fall back to the archived countryside background.
+if (gameScene.includes("'battlefield-v0'") || gameScene.includes('ART.backgrounds.battlefieldV0')) {
+  errors.push('Runtime background still references the archived battlefield_v0 asset.');
+}
 if (errors.length) { console.error('Asset check failed:\n- ' + errors.join('\n- ')); process.exit(1); }
 console.log(`Asset check passed: ${defenders.length} Defender assets and one office battlefield background.`);

@@ -1,9 +1,25 @@
 /** Every playable visual tier. Values above 8192 intentionally use 8192 art as a fallback. */
 export const PLANT_VALUES = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] as const;
+const DEFENDER_VALUES = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096] as const;
 
 /** Stable PNG art contract. Graybox shapes remain until these paths are supplied. */
 export const ART = {
-  plants: Object.fromEntries(PLANT_VALUES.map(value => [value, `assets/plants/plant_${String(value).padStart(3, '0')}.png`])),
+  /** Approved Production Defender bodies. 8192+ intentionally reuse 4096 art. */
+  defenders: {
+    1: 'assets/production/defenders/defender_001_pen.png',
+    2: 'assets/production/defenders/defender_002_glue.png',
+    4: 'assets/production/defenders/defender_004_fan.png',
+    8: 'assets/production/defenders/defender_008_thermos.png',
+    16: 'assets/production/defenders/defender_016_energy.png',
+    32: 'assets/production/defenders/defender_032_stapler.png',
+    64: 'assets/production/defenders/defender_064_spray.png',
+    128: 'assets/production/defenders/defender_128_phone_stand.png',
+    256: 'assets/production/defenders/defender_256_laptop.png',
+    512: 'assets/production/defenders/defender_512_monitor.png',
+    1024: 'assets/production/defenders/defender_1024_printer.png',
+    2048: 'assets/production/defenders/defender_2048_shredder.png',
+    4096: 'assets/production/defenders/defender_4096_workstation_core.png',
+  } as Record<(typeof DEFENDER_VALUES)[number], string>,
   enemies: { basic01: 'assets/enemies/enemy_basic_01.png', basic02: 'assets/enemies/enemy_basic_02.png', large01: 'assets/enemies/enemy_large_01.png' },
   rewards: Object.fromEntries([1, 2, 4, 8].map(value => [value, `assets/rewards/reward_${value}.png`])),
   /**
