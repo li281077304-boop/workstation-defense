@@ -43,6 +43,7 @@
 - [ ] **美术**：明天 GPT 生成后替换 `assets/` 下 PNG（每张独立完整图，直接覆盖即可）。
 - [x] **GitHub 推送**：私有远程 `origin` 已配置，`main` 已推送。
 - [ ] **安卓打包**：本机缺 SDK/JDK 环境，装了 Android Studio 后可 `npm run android:sync` 出包。
+- [ ] **Future release identity**：在正式发行前将 Android `applicationId` / package 从 `com.local.dfamilyvsaliens` 迁移为 workstation-defense 风格；本轮不改，避免安装升级风险。
 
 ---
 

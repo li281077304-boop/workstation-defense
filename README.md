@@ -18,7 +18,7 @@
 
 ## 当前 Defender 语义
 
-`1 → 4096` 对应不同的办公用品：笔、胶棒、小风扇、保温杯、通用能量饮料、订书机、喷雾瓶、手机支架/信号类物件、笔记本/数据类物件、显示器、打印机/纸张类、碎纸机与终极工位核心。具体运行时 PNG 映射以 [DEFENDER_ASSET_AUDIT.md](docs/DEFENDER_ASSET_AUDIT.md) 为准。
+`1 → 4096` 对应不同的办公用品：笔、胶棒、小风扇、保温杯、通用能量饮料、订书机、喷雾瓶、手机支架/信号类物件、笔记本/数据类物件、显示器、打印机/纸张类、碎纸机与终极工位核心。当前尚缺经确认的主体 PNG 与横屏办公室背景，因此正式美术迁移处于阻塞状态；见 [PRODUCTION_ASSET_MANIFEST.md](docs/PRODUCTION_ASSET_MANIFEST.md) 与 [ASSET_PIPELINE.md](docs/ASSET_PIPELINE.md)。
 
 ## 常用命令
 
@@ -38,6 +38,8 @@ Android debug 包在同步 Web 构建后，于 `android/` 目录执行 `./gradle
 - [现行规则](docs/LOCKED_RULES.md)
 - [Defender 素材审计](docs/DEFENDER_ASSET_AUDIT.md)
 - [背景素材审计](docs/BACKGROUND_ASSET_AUDIT.md)
+- [Production 资产清单](docs/PRODUCTION_ASSET_MANIFEST.md)
+- [Candidate → Production 管线](docs/ASSET_PIPELINE.md)
 - [渲染审计](docs/CURRENT_RENDERING_AUDIT.md)
 - [开放问题](docs/OPEN_QUESTIONS.md)
 - [开发日志](docs/DEVLOG.md)
