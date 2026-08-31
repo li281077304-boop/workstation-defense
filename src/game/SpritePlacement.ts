@@ -54,7 +54,9 @@ export function createCellMetrics(layout: {
   defenseLeft: number; defenseCellWidth: number;
   battlefieldLeft: number; battlefieldCellWidth: number;
   top: number; rowHeight: number;
-  rows: number; defenseColumns?: number; columns?: number;
+  rows: number;
+  defenseColumns: number;
+  logicalBattlefieldColumns: number;
 }): CellMetrics {
   return {
     defenseLeft: layout.defenseLeft,
@@ -64,8 +66,8 @@ export function createCellMetrics(layout: {
     top: layout.top,
     rowHeight: layout.rowHeight,
     rows: layout.rows,
-    defenseCols: layout.defenseColumns ?? (layout.columns ?? 2),
-    battlefieldCols: 12,
+    defenseCols: layout.defenseColumns,
+    battlefieldCols: layout.logicalBattlefieldColumns,
   };
 }
 

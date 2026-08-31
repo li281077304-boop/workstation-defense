@@ -1,4 +1,4 @@
-# Plant Merge Defense — AI Working Contract
+# Workstation Defense / 工位保卫战 — AI Working Contract
 
 This file is the operating contract for every coding agent in this repository.
 
@@ -6,15 +6,18 @@ This file is the operating contract for every coding agent in this repository.
 
 When sources disagree, use the first applicable source in this order:
 
-1. Automated tests in `tests/`
-2. `docs/LOCKED_RULES.md`
-3. This file
-4. The user's current, explicit task
-5. `docs/CONFIG_BOUNDARIES.md` and `docs/OPEN_QUESTIONS.md`
-6. `docs/TODO.md`
-7. `docs/PROJECT_HANDOFF.md`, `docs/DEVLOG.md`, and chat history
+1. The user's current, explicit task
+2. Automated tests in `tests/`
+3. `docs/LOCKED_RULES.md`
+4. `docs/ACTIVE_PRODUCT_DIRECTION.md`
+5. This file
+6. `docs/CONFIG_BOUNDARIES.md` and `docs/OPEN_QUESTIONS.md`
+7. `docs/TODO.md`
+8. Historical documents, including `docs/PROJECT_HANDOFF.md`, `docs/DEVLOG.md`, and chat history
 
-A lower-priority source never changes a higher-priority one.
+The current user decision can change an older rule. In that case, update the
+affected `LOCKED_RULES.md` rule and its focused test in the same change; an old
+test must not be used as a reason to reject the user's explicit new decision.
 
 ## Do not invent gameplay
 

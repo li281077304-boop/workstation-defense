@@ -6,20 +6,20 @@ explicit user decision and matching test updates.
 ## R001–R006: Board and turns
 
 - R001: The game is endless; it has no levels.
-- R002: The defense board is exactly 2 columns by 5 rows; plants may occupy only it.
+- R002: The defense board is exactly 2 columns by 5 rows; Defenders may occupy only it.
 - R003: The battlefield is exactly 10 columns by 5 rows for enemies, reward balls, projectiles, and effects.
 - R004: A legal move, swap, merge, birth-slot placement, or legal birth-slot merge consumes one turn. Illegal/cancelled actions consume none.
-- R005: A turn resolves: player operation; post-operation board; all plants fire; projectiles resolve; surviving enemies move left one cell; world stops.
+- R005: A turn resolves: player operation; post-operation board; all Defenders fire; projectiles resolve; surviving enemies move left one cell; world stops.
 - R006: Without a player operation, the world does not advance.
 
-## R007–R012: Plants and projectiles
+## R007–R012: Defenders and projectiles
 
 - R007: An enemy entering the defense area immediately ends the game; there are no player lives or leak damage.
-- R008: Plant values are powers of two. Art currently covers 1–8192; game logic has no hard value cap and uses the 8192 appearance above that.
+- R008: Defender values are powers of two. Art currently covers 1–8192; game logic has no hard value cap and uses the 8192 appearance above that.
 - R009: Each attacking Defender fires exactly one Projectile per turn. Projectile damage equals the Defender value; a value of 512 creates one Projectile with 512 damage, not four split projectiles.
 - R010: Projectiles pierce enemies using their remaining damage.
 - R011: A Projectile hitting a MoyuPickup captures it and is fully consumed; no remaining damage continues.
-- R012: Every plant fires each turn, not only a plant involved in the operation.
+- R012: Every Defender fires each turn, not only a Defender involved in the operation.
 
 ## R013–R016: Legacy RewardBall and birth slot
 
@@ -59,7 +59,7 @@ explicit user decision and matching test updates.
 
 - R035: Moyu Bank capacity is `clamp(highestDefenderValue / 4, 1, 32)`, where `highestDefenderValue` is the historical maximum reached in the run and never decreases after a merge or move.
 - R036: A collected or auto-recovered MoyuPickup credits only the remaining Bank capacity. The remainder is immediately lost and recorded as overflow; it is never queued, auto-extracted, or deferred.
-- R037: Extraction remains a no-Turn action and removes the highest affordable power of two, up to 4096. It records the extracted value but is forbidden while the Spawn Slot is occupied.
+- R037: Extraction remains a no-Turn action and removes the highest affordable power of two from the current Moyu Bank. Because Bank capacity is capped at 32, current extraction cannot exceed 32. It records the extracted value but is forbidden while the Spawn Slot is occupied.
 - R038: A non-ended run is saved at stable logic points and may resume locally. Game Over and an explicit restart are never resumable. The local Top 10 stores summaries only and has no network component.
 
 ## Explicitly out of scope

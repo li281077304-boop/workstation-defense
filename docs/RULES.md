@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This plant-era reference remains only for historical context. Current rules are in [`LOCKED_RULES.md`](./LOCKED_RULES.md) and current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # RULES — Legacy Rule Reference
 
 > **Authoritative rules now live in [`LOCKED_RULES.md`](./LOCKED_RULES.md).**

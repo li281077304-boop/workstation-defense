@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This plant-era handoff is retained only for historical implementation context. The current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # 植物合成防线 — 项目总规划与开发交接文档
 
 > **背景与历史交接资料，不是现行规则权威。** 现行硬规则见

@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This plant-era art brief is retained only for history. The current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # ART_DIRECTION — 美术规范
 
 > 目标：让任何 AI（Codex / WorkBuddy / ChatGPT）不靠聊天记忆，只读本文件就能接美术活。

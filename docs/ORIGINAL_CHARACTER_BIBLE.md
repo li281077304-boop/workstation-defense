@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This document records the former D Family / elemental direction. The current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # D Family — 原创角色圣经 V1
 
 > 状态：已确认方向，尚未开始绘制。  

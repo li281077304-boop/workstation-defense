@@ -9,6 +9,20 @@
 
 ---
 
+## 2026-08-31 — Project Cleanup Pass 1: 产品真源与资源审计
+
+- 将仓库 AI 工作契约重命名为《工位保卫战》，并把“用户当前明确任务”提升为最高权威；用户改旧规则时，必须同步更新锁定规则和测试，旧测试不得阻止新决定。
+- 新建 `ACTIVE_PRODUCT_DIRECTION.md`：当前 Defender 为办公用品，敌人为资本怪 / KPI / 会议 / 报表 / 加班系统；火冰雷、D Family、外星人方向归档。
+- 为 D Family、植物时代美术规范、旧交接与旧状态快照增加 `ARCHIVED / HISTORICAL ONLY` 提示，未删除任何历史资料或素材。
+- 审计确认当前 `assets/plants/plant_*.png` 全部仍是旧植物 / 旧角色图，不适合作为当前办公用品 Defender；本轮未替换任何运行时美术。
+- 审计确认仓库内没有办公室正式背景：当前 `battlefield_v0.png` 是乡村背景，仅保留并记录。
+- 澄清逻辑战场始终为 `10×5`；历史 `layout.columns = 12` 没有扩展玩法，已替换为显式 `defenseColumns = 2` / `logicalBattlefieldColumns = 10`。
+- 未修改 Turn、经济、数值、Projectile、容量或 Sprite Placement 核心行为。
+
+验证：`npm test` 92/92 通过；`npm run build` 通过。
+
+---
+
 ## 2026-08-30 — 《工位保卫战》V0.2：摸鱼反击版立项
 
 - 玩家可见项目名改为《工位保卫战》；Android 显示名和 Capacitor 应用名同步更新。

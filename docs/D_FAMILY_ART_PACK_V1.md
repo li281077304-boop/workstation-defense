@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This document records the former D Family / elemental art direction. The current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # 逗呆呆家族：首批 9 角色与攻击素材包 V1
 
 > 状态：**设计与资源映射已锁定，尚未生成或接入图片。**  

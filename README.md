@@ -1,30 +1,24 @@
 # 工位保卫战
 
-独立的原创横屏塔防游戏工程。V0.2 的核心方向是“摸鱼反击”：资本怪携带被榨走的摸鱼值；击杀后永久入账，玩家主动提取为工位用品战力。
+《工位保卫战》是一款原创的横屏、单机、无尽回合制塔防游戏：办公用品守卫工位，反抗资本怪、KPI、会议、报表与加班系统，夺回属于自己的摸鱼时间。
 
-## 当前边界
+> **属于你的时间，一分钟都不能少。**
 
-- 这是新的项目仓库，不与来源工程共用 Git 历史。
-- 当前保留运行框架、Android 工程、测试和已验证的可玩难度作为技术基线。
-- 后续只在本仓库中演进原创角色、美术、敌人、故事和名称；不使用任何第三方游戏角色、素材或名称。
-- 未配置远程仓库；需要时再单独创建并推送 GitHub。
+## 当前产品
 
-## 世界与核心角色
+- 技术栈：TypeScript、Phaser 3、Vite。
+- 移动端：Capacitor Android。
+- 棋盘：左侧 `2×5` Defender 区；右侧严格 `10×5` 逻辑战场。
+- 回合：一次合法玩家操作结算一个 Turn；玩家不操作，世界不推进。
+- 经济：资本怪携带摸鱼值（Moyu）；击杀、截获或边界回收后进入 Moyu Bank，玩家主动提取到 Spawn Slot 并部署或合成。
+- 产品功能：自动存档与继续游戏、本地 Top 10、Settings、AudioManager。
+- 渲染：Sprite Placement V1 以 Ground Point、bottom-center pivot 与 Y/depth sorting 统一静态单位落位。
 
-| 角色 | 属性 | 初 / 中 / 高阶段 |
-| --- | --- | --- |
-| 呆 | 火焰、穿透 | 点火者 / 熔火先锋 / 恒星装甲 |
-| 逗 | 冰霜、控制 | 霜语者 / 极寒使 / 永冬领域 |
-| 小R（Rocky） | 雷电、元素共鸣 | 电光学徒 / 雷虎机兵 / XY 雷域装甲 |
+当前产品方向、当前 Defender 语义与历史资料边界见 [ACTIVE_PRODUCT_DIRECTION.md](docs/ACTIVE_PRODUCT_DIRECTION.md)。确认过的玩法规则见 [LOCKED_RULES.md](docs/LOCKED_RULES.md)。
 
-三人共享原创的 D-Core 能源识别符。小R攻击带 Fire 或 Frost 状态的敌人时，当前设计为触发 +12.5% 元素增伤；更复杂的双元素机制后续单独设计。
+## 当前 Defender 语义
 
-## 技术基线
-
-- 前端：Vite + TypeScript + Phaser 3。
-- 移动端：Capacitor + Android，包名 `com.local.dfamilyvsaliens`。
-- 玩法：玩家操作触发一个 Turn；攻击、命中、死亡、旧单位移动、新批次出生按事件顺序演出。
-- 难度：保留 `REWARD_ECONOMY_CURVE_V2`，默认锁定 `BALANCED_V1`；默认 Enemy Volume 为 `0.4`。
+`1 → 4096` 对应不同的办公用品：笔、胶棒、小风扇、保温杯、通用能量饮料、订书机、喷雾瓶、手机支架/信号类物件、笔记本/数据类物件、显示器、打印机/纸张类、碎纸机与终极工位核心。具体运行时 PNG 映射以 [DEFENDER_ASSET_AUDIT.md](docs/DEFENDER_ASSET_AUDIT.md) 为准。
 
 ## 常用命令
 
@@ -40,15 +34,16 @@ Android debug 包在同步 Web 构建后，于 `android/` 目录执行 `./gradle
 
 ## 文档入口
 
-- [项目交接与现状](docs/PROJECT_HANDOFF.md)
+- [当前产品方向](docs/ACTIVE_PRODUCT_DIRECTION.md)
 - [现行规则](docs/LOCKED_RULES.md)
-- [难度与基线](docs/DIFFICULTY.md)
-- [原创角色圣经](docs/ORIGINAL_CHARACTER_BIBLE.md)
-- [首批 9 角色素材规范](docs/D_FAMILY_ART_PACK_V1.md)
+- [Defender 素材审计](docs/DEFENDER_ASSET_AUDIT.md)
+- [背景素材审计](docs/BACKGROUND_ASSET_AUDIT.md)
+- [渲染审计](docs/CURRENT_RENDERING_AUDIT.md)
+- [开放问题](docs/OPEN_QUESTIONS.md)
 - [开发日志](docs/DEVLOG.md)
 
-## 接下来做什么
+历史火/冰/雷、D Family 与外星人方向仅保留作归档，不得作为当前产品需求。
 
-1. 依据九宫格美术基准完成 3 人 × 3 阶段角色主体与攻击素材。
-2. 将现有临时角色/敌人视觉替换为原创资源，并保持战斗数值不变。
-3. 完成原创外星人敌人阵容与首个可玩主题场景。
+## GitHub
+
+仓库：[li281077304-boop/workstation-defense](https://github.com/li281077304-boop/workstation-defense)

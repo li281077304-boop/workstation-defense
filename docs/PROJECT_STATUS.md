@@ -1,3 +1,7 @@
+# ARCHIVED / HISTORICAL ONLY
+
+> **DO NOT USE AS CURRENT PRODUCT REQUIREMENTS.** This status snapshot describes the former D Family / alien framing. The current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 # 项目阶段性总结
 
 > **项目：** 《逗呆呆家族大战外星人》（仓库名：`d-family-vs-aliens`）  

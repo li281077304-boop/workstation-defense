@@ -1,8 +1,24 @@
 # CURRENT_RENDERING_AUDIT.md
 
+> **Historical pre-Placement-V1 audit snapshot.** It records the old `0046a88` baseline and must not be used as a description of current runtime placement. Current product direction is [`ACTIVE_PRODUCT_DIRECTION.md`](./ACTIVE_PRODUCT_DIRECTION.md).
+
 > 工位保卫战 V0.3-lite 渲染审计
 > 审计基线: commit `0046a88` (snapshot before sprite placement refactor)
 > 审计时间: 2026-08-30 23:15
+
+---
+
+## 2026-08-31 Cleanup clarification: 10×5 logic vs historical `columns: 12`
+
+**Conclusion: the implementation is A — a strict `10×5` logical battlefield.**
+
+- `src/game/config.ts` defines `BOARD.battlefieldCols = 10`; this is the gameplay source for Enemy spawning, movement, footprint checks, projectile coordinates and lane rendering.
+- A 1×1 Enemy spawns at logical column `9`; a `2×2` Enemy starts at `8` and occupies `8–9`.
+- `GameScene.ts` draws cells only for `c < BOARD.battlefieldCols`; runtime lanes are therefore 10 columns wide.
+- The old `layout.ts` field `columns: 12` did not extend gameplay. It was a stale, ambiguous layout value. It has been replaced with `defenseColumns: 2` and `logicalBattlefieldColumns: 10`.
+- The brown decorative backdrop extending past the final cell is visual-only; it is not an eleventh or twelfth playable column.
+
+`SpritePlacement.createCellMetrics()` now receives the explicit two layout counts and passes the logical `10` to `CellMetrics`. No entity logic or gameplay rule changed in this cleanup.
 
 ---
 
@@ -21,7 +37,8 @@ MOBILE_LAYOUT = {
     battlefieldCellWidth: 130, // 战场格宽
     rowHeight: 176,         // 行高
     rows: 5,                // 5 条 Lane
-    columns: 12,            // 战场 12 列
+    defenseColumns: 2,      // 防守区 2 列
+    logicalBattlefieldColumns: 10, // 严格的战场 10 列
   },
   spawnSlot: { left: 45, width: 150, centerY: 590, height: 480 },
 }
