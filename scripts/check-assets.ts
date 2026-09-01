@@ -64,7 +64,7 @@ const assetsTs = readFileSync(resolve(root, 'src/ui/assets.ts'), 'utf8');
 const gameScene = readFileSync(resolve(root, 'src/game/GameScene.ts'), 'utf8');
 if (!assetsTs.includes('defenders:') || !assetsTs.includes('assets/production/defenders/') || !gameScene.includes('ART.defenders')) errors.push('Runtime Defender mapping has not switched to Production assets.');
 if (!assetsTs.includes('assets/production/enemies/') || !gameScene.includes('ART.enemies')) errors.push('Runtime Enemy mapping has not switched to recovered Production art.');
-if (!assetsTs.includes('assets/candidates/backgrounds/battlefield_office_v1_review.png') || !gameScene.includes('ART.backgrounds.officeReview')) errors.push('Runtime review background is not wired to its candidate asset.');
+if (!assetsTs.includes('assets/production/backgrounds/battlefield_office_v1.png') || !gameScene.includes('ART.backgrounds.officeReview')) errors.push('Runtime office background is not wired to its Production asset.');
 if (gameScene.includes("'battlefield-v0'") || gameScene.includes('ART.backgrounds.legacyCountryside') || gameScene.includes('ART.tempExperienceEnemies')) errors.push('Runtime still references archived countryside or TEMP enemy art.');
 if (errors.length) { console.error('Asset check failed:\n- ' + errors.join('\n- ')); process.exit(1); }
 console.log(`Asset check passed: ${defenders.length} approved Defenders, ${enemies.length} recovered approved Enemies.`);

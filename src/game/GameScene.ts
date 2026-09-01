@@ -1535,14 +1535,10 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     this.spriteLabVisible = true;
   }
 
-  /**
-   * TEMP / REVIEW ONLY: a procedural office floor for validating placement,
-   * overlap and lighting before a real Production office background is approved.
-   */
+  /** Office battlefield background with the existing orthogonal logic grid. */
   private renderTemporaryOfficeBackground() {
-    // This image is deliberately a review candidate, not an approved Production
-    // background. It lets runtime art review happen without silently using rural
-    // legacy art or changing any board coordinates.
+    // The art is a visual layer only; board coordinates remain orthogonal and
+    // are still owned by the existing logic grid.
     this.add.image(L.width / 2, L.height / 2, 'office-background-review')
       .setDisplaySize(L.width, L.height).setDepth(0);
     const g = this.add.graphics().setDepth(RENDER_DEPTH.FLOOR);
@@ -1578,7 +1574,6 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     }
     // Edge-only foreground clutter / cables; no interruption of board cells.
     g.lineStyle(3, 0x18212c, .65).lineBetween(10, 1050, 200, 1038).lineBetween(1740, 1055, 1910, 1022);
-    this.add.text(1890, 142, 'OFFICE BACKGROUND · REVIEW CANDIDATE', { fontSize: '16px', color: '#b7d8ea' }).setAlpha(.62).setOrigin(1, 0).setDepth(RENDER_DEPTH.FLOOR + 1);
   }
 
   /* ─── Sprite-based rendering ─── */

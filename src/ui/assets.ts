@@ -31,14 +31,14 @@ export const ART = {
   },
   /** Recovered approved capital-pressure character art. */
   enemies: {
-    contract: 'assets/production/enemies/enemy_01_contract.png',
-    kpi: 'assets/production/enemies/enemy_02_kpi.png',
-    meeting: 'assets/production/enemies/enemy_03_meeting.png',
-    approval: 'assets/production/enemies/enemy_04_approval.png',
-    report: 'assets/production/enemies/enemy_05_report.png',
-    ranking: 'assets/production/enemies/enemy_06_ranking.png',
-    executive: 'assets/production/enemies/enemy_07_executive.png',
-    systemCore: 'assets/production/enemies/enemy_08_system_core.png',
+    contract: 'assets/production/enemies/enemy_01_kpi_specialist.png',
+    kpi: 'assets/production/enemies/enemy_02_meeting_enthusiast.png',
+    meeting: 'assets/production/enemies/enemy_03_approval_supervisor.png',
+    approval: 'assets/production/enemies/enemy_04_overtime_care.png',
+    report: 'assets/production/enemies/enemy_05_progress_pusher.png',
+    ranking: 'assets/production/enemies/enemy_06_cost_cut_manager.png',
+    executive: 'assets/production/enemies/enemy_07_ranking_manager.png',
+    systemCore: 'assets/production/enemies/enemy_08_capital_system_boss.png',
   },
   rewards: Object.fromEntries([1, 2, 4, 8].map(value => [value, `assets/rewards/reward_${value}.png`])),
   /**
@@ -62,8 +62,8 @@ export const ART = {
   },
   moyuIcon: 'assets/ui/moyu_icon.png',
   backgrounds: {
-    /** Candidate only: used by the V0.33 art-review build, not yet approved Production art. */
-    officeReview: 'assets/candidates/backgrounds/battlefield_office_v1_review.png',
+    /** V0.34 office battlefield production background. */
+    officeReview: 'assets/production/backgrounds/battlefield_office_v1.png',
     legacyCountryside: 'assets/backgrounds/battlefield_v0.png',
   },
   tiles: { battlefield: 'assets/tiles/battlefield_cell_v1.png', defense: 'assets/tiles/defense_cell_v1.png', birthSlot: 'assets/ui/birth_slot.png' },
