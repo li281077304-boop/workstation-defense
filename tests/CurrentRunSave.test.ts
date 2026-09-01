@@ -96,7 +96,7 @@ describe('CurrentRunSave', () => {
     delete (legacy as Partial<typeof legacy>).totalMoyuDismissalCost;
     delete (legacy as Partial<typeof legacy>).totalMoyuOverflow;
     storage.setItem(LEGACY_CURRENT_RUN_SAVE_KEY, JSON.stringify({ saveVersion: 1, savedAt: 100, run: { state: legacy, runtime: {} } }));
-    expect(loadCurrentRun(storage)?.run.state).toMatchObject({ highestDefenderValue: 1, moyuBank: 1, totalMoyuEarned: 1, totalMoyuOverflow: 72 });
+    expect(loadCurrentRun(storage)?.run.state).toMatchObject({ highestDefenderValue: 1, moyuBank: 4, totalMoyuEarned: 4, totalMoyuOverflow: 69 });
   });
 
   it('migrates a V2 save by adding a zero dismissal ledger', () => {

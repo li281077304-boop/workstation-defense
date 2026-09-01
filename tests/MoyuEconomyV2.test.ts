@@ -42,11 +42,18 @@ describe('Moyu Economy V2', () => {
     const s = emptyState(); s.enemies.push(enemy('e', 100, 2)); s.moyuPickups.push({ id: 'm', value: 8, row: 0, col: 3, isCollected: false, spawnTurn: 0 }); const m = new TurnManager(s, quietRules); m.resolveProjectile(shot(512));
     expect(m.state.events.find(e => e.type === 'moyu-collected')?.damage).toBe(412);
   });
-  it('9 a dropped Moyu cannot be collected by the killing projectile', () => {
+  it('9 a dropped Moyu is visible immediately and is not collected by its killing projectile', () => {
     const s = emptyState(); s.plants[0][0] = plant(8); s.plants[0][1] = plant(1); s.enemies.push(enemy('e', 4, 2, 16)); const m = new TurnManager(s, quietRules); m.perform({ from: { row: 0, col: 0 }, to: { row: 0, col: 1 } });
-    expect(s.moyuBank).toBe(0); expect(s.moyuPickups).toHaveLength(1);
+    // The rear (left) Defender is allowed to capture the front kill's drop
+    // in the same Turn; only the killing projectile itself is excluded.
+    expect(s.moyuBank).toBe(4); expect(s.moyuPickups).toHaveLength(0);
   });
-  it('10 queued drops spawn after the whole projectile phase', () => {
+  it('9b the killing projectile cannot capture its own immediate drop', () => {
+    const s = emptyState(); s.enemies.push(enemy('e', 1, 2, 8)); const m = new TurnManager(s, quietRules);
+    m.resolveProjectile(shot(1));
+    expect(s.moyuBank).toBe(0); expect(s.moyuPickups).toHaveLength(1); expect(s.moyuPickups[0].value).toBe(8);
+  });
+  it('10 a killed carrier emits its pickup during the projectile phase', () => {
     const s = emptyState(); s.plants[0][0] = plant(4); s.plants[0][1] = plant(1); s.enemies.push(enemy('e', 4, 2, 16)); const m = new TurnManager(s, quietRules); m.perform({ from: { row: 0, col: 0 }, to: { row: 0, col: 1 } });
     expect(s.events.findIndex(e => e.type === 'moyu-drop-queued')).toBeLessThan(s.events.findIndex(e => e.type === 'moyu-spawned'));
   });
@@ -100,7 +107,7 @@ describe('Moyu Economy V2', () => {
     expect(s.birthSlot).toBeNull();
   });
   it('27 capacity follows the historical Defender high-water mark and caps at 32', () => {
-    expect([1, 2, 4, 8, 16, 32, 64, 128, 4096].map(TurnManager.moyuCapacityFor)).toEqual([1, 1, 1, 2, 4, 8, 16, 32, 32]);
+    expect([1, 2, 4, 8, 16, 32, 64, 128, 4096].map(TurnManager.moyuCapacityFor)).toEqual([4, 4, 4, 4, 4, 8, 16, 32, 32]);
     const s = withHighest(emptyState(), 32); s.plants[0][0] = plant(32);
     const m = new TurnManager(s, quietRules);
     m.perform({ from: { row: 0, col: 0 }, to: { row: 0, col: 1 } });
@@ -130,12 +137,13 @@ describe('Moyu Economy V2', () => {
     const collected = s.events.find(event => event.type === 'moyu-collected')!;
     expect((collected.earnedValue ?? 0) + (collected.overflowValue ?? 0)).toBe(8);
   });
-  it('31 opening layout provides four value-1 Defenders with immediate merge choices', () => {
+  it('31 opening layout provides six value-1 Defenders across five lanes with an immediate merge choice', () => {
     const s = emptyState();
     seedStartingDefenders(s);
-    expect(STARTING_DEFENDER_LAYOUT).toHaveLength(4);
-    expect(s.plants.flat().filter(Boolean)).toHaveLength(4);
-    expect(s.plants.flat().filter(Boolean).map(defender => defender!.value)).toEqual([1, 1, 1, 1]);
-    expect(s.plants[2]).toEqual([null, null]);
+    expect(STARTING_DEFENDER_LAYOUT).toHaveLength(6);
+    expect(s.plants.flat().filter(Boolean)).toHaveLength(6);
+    expect(s.plants.flat().filter(Boolean).map(defender => defender!.value)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(s.plants[2][0]?.value).toBe(1);
+    expect(s.plants[2][1]?.value).toBe(1);
   });
 });

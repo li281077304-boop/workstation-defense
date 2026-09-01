@@ -44,8 +44,8 @@ explicit user decision and matching test updates.
 ## R024–R034: Moyu Economy V2
 
 - R024: A legal Enemy may carry `moyuValue` of 0 or a power of two. The carrier rate and value-growth table are configuration, not enemy-type guarantees.
-- R025: When a carried-value Enemy dies, it creates exactly one pending MoyuPickup at its death position if `moyuValue > 0`, then clears the carrier value to prevent duplicate drops. Death does not directly increase Moyu Bank.
-- R026: Pending MoyuPickups are spawned only after every Projectile in the current attack phase has completed combat resolution. The Projectile that killed the carrier cannot immediately collect the newly created pickup.
+- R025: When a carried-value Enemy dies, it creates exactly one MoyuPickup at its death position if `moyuValue > 0`, then clears the carrier value to prevent duplicate drops. Death does not directly increase Moyu Bank.
+- R026: The pickup appears immediately during projectile resolution. The Projectile that killed the carrier cannot collect its own newly created pickup; later projectiles in the same Turn may capture it.
 - R027: MoyuPickup is a 1×1 battlefield entity. It does not attack, has no HP, does not cause Game Over, and cannot overlap Enemy or another MoyuPickup footprint.
 - R028: A MoyuPickup moves with the enemy movement phase, using the existing battlefield movement rules. If it reaches the recovery boundary, it is automatically recovered into Moyu Bank and must not be lost.
 - R029: Any Projectile can collect any MoyuPickup regardless of Projectile damage, remaining damage, or pickup value. No damage threshold or pickup HP exists.
@@ -57,7 +57,7 @@ explicit user decision and matching test updates.
 
 ## R035–R038: Moyu capacity and product persistence
 
-- R035: Moyu Bank capacity is `clamp(highestDefenderValue / 4, 1, 32)`, where `highestDefenderValue` is the historical maximum reached in the run and never decreases after a merge or move.
+- R035: Moyu Bank capacity is `clamp(highestDefenderValue / 4, 4, 32)`, where `highestDefenderValue` is the historical maximum reached in the run and never decreases after a merge or move. A new run therefore starts at capacity 4.
 - R036: A collected or auto-recovered MoyuPickup credits only the remaining Bank capacity. The remainder is immediately lost and recorded as overflow; it is never queued, auto-extracted, or deferred.
 - R037: Extraction remains a no-Turn action and removes the highest affordable power of two from the current Moyu Bank. Because Bank capacity is capped at 32, current extraction cannot exceed 32. It records the extracted value but is forbidden while the Spawn Slot is occupied.
 - R038: A non-ended run is saved at stable logic points and may resume locally. Game Over and an explicit restart are never resumable. The local Top 10 stores summaries only and has no network component.

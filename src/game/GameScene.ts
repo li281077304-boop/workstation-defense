@@ -130,7 +130,7 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   private visualBirthSlot: number | null = null;
   /** Logical collection is immediate; this is only the HUD's animation-safe display value. */
   private visualMoyuBank = 0;
-  /** A short tap sequence on the full Spawn Slot invokes its deterministic quick deploy. */
+  /** Double-tap extraction gesture state for the unified Moyu/Birth Slot. */
   private lastSpawnSlotTapAt = 0;
   private spawnSlotTapStart: { x: number; y: number; at: number } | null = null;
   private combatVisualStart: CombatVisualStart | null = null;
@@ -443,50 +443,40 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     if (this.productPanel || this.isDifficultyPanelOpen()) return;
     this.debugPanelHold?.remove(false);
     this.debugPanelHold = null;
-    if (this.isSpawnSlotQuickTap(pointer)) {
-      this.cancelDrag();
-      const now = this.time.now;
-      if (now - this.lastSpawnSlotTapAt <= 340) {
-        this.lastSpawnSlotTapAt = 0;
-        this.quickDeployFromBirthSlot();
-      } else {
-        this.lastSpawnSlotTapAt = now;
-      }
-      this.spawnSlotTapStart = null;
-      return;
-    }
     this.spawnSlotTapStart = null;
     this.endDrag(pointer.x, pointer.y);
   }
 
-  /**
-   * One bank press extracts the largest legal power of two. It remains a
-   * UI-only operation: no Turn is started and all authority stays in the core.
-   */
+  /** Unified Moyu/Birth Slot. A double tap extracts; a pending unit can be dragged. */
   private handleMoyuUiPointer(x: number, y: number) {
-    const bank = this.moyuBankBounds();
-    if (Phaser.Geom.Rectangle.Contains(bank, x, y)) {
-      if (this.manager.state.birthSlot !== null) {
-        this.floatText(bank.centerX, bank.bottom + 18, '先部署当前办公用品', '#ffd49b');
-      } else if (!this.animating && !this.manager.state.gameOver && this.manager.state.moyuBank < 1) {
-        this.floatText(bank.centerX, bank.bottom + 18, '摸鱼值不足', '#c9d6d2');
-      } else if (!this.animating && !this.manager.state.gameOver) {
-        const before = this.manager.state.moyuBank;
-        if (this.manager.extractHighestMoyu()) {
-          const extracted = before - this.manager.state.moyuBank;
-          this.visualMoyuBank = this.manager.state.moyuBank;
-          this.visualBirthSlot = this.manager.state.birthSlot;
-          this.saveRun();
-          getAudioManager().playSfx('moyuExtract');
-          this.cancelDrag();
-          this.render();
-          const slot = this.getSpawnSlotCenter();
-          this.floatText(slot.x, slot.y - 112, `提取 ${extracted}`, '#d8ff9f');
-        }
-      }
+    if (!this.isInSpawnSlot(x, y)) return false;
+    const slot = this.getSpawnSlotCenter();
+    if (this.manager.state.birthSlot !== null) {
+      this.beginDrag(x, y);
       return true;
     }
-    return false;
+    if (this.animating || this.manager.state.gameOver) return true;
+    const now = this.time.now;
+    if (now - this.lastSpawnSlotTapAt <= 340) {
+      this.lastSpawnSlotTapAt = 0;
+      const before = this.manager.state.moyuBank;
+      if (!this.manager.extractHighestMoyu()) {
+        this.floatText(slot.x, slot.y + 112, before < 1 ? '摸鱼值不足' : '摸鱼账户已满或无法提取', '#ffd49b');
+        return true;
+      }
+      const extracted = before - this.manager.state.moyuBank;
+      this.visualMoyuBank = this.manager.state.moyuBank;
+      this.visualBirthSlot = this.manager.state.birthSlot;
+      this.saveRun();
+      getAudioManager().playSfx('moyuExtract');
+      this.render();
+      this.selected = 'birth';
+      this.spawnDragGhost(slot.x, slot.y - 35, PLANT_FRAME(this.manager.state.birthSlot!), 110, 110);
+      this.floatText(slot.x, slot.y - 112, `提取 ${extracted} · 拖动部署`, '#d8ff9f');
+    } else {
+      this.lastSpawnSlotTapAt = now;
+    }
+    return true;
   }
 
   private isSpawnSlotQuickTap(pointer: Phaser.Input.Pointer) {
@@ -1099,8 +1089,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
   }
 
   private updateEnemyHp(id: string, hp: number) {
-    const label = this.findEntity('enemyId', id)?.getData('hpLabel') as Phaser.GameObjects.Text | undefined;
-    label?.setText(String(hp));
+    const entity = this.findEntity('enemyId', id);
+    const label = entity?.getData('hpLabel') as Phaser.GameObjects.Text | undefined;
+    label?.setText(`${hp} / ${entity?.getData('maxHp') ?? hp}`);
+    const fill = entity?.getData('hpFill') as Phaser.GameObjects.Rectangle | undefined;
+    const maxHp = Number(entity?.getData('maxHp') ?? hp);
+    fill?.setDisplaySize( Math.max(2, 76 * Math.max(0, Math.min(1, hp / Math.max(1, maxHp)))), 6);
   }
 
   private updateBirthSlotVisual(value: number) {
@@ -1181,6 +1175,8 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     const full = value >= capacity;
     const ready = !this.animating && !this.manager.state.gameOver && this.manager.state.birthSlot === null && value >= 1;
     bank.add(this.add.rectangle(bounds.x, bounds.y, bounds.width, bounds.height, full ? 0x5b4721 : ready ? 0x284a31 : 0x193b2b, .96).setOrigin(0).setStrokeStyle(3, full ? 0xffcf5d : ready ? 0xb7e46f : 0x86c75d, 1));
+    const fillHeight = bounds.height * Math.min(1, Math.max(0, value / Math.max(1, capacity)));
+    if (fillHeight > 0) bank.add(this.add.rectangle(bounds.x + 4, bounds.y + bounds.height - fillHeight - 4, bounds.width - 8, fillHeight, 0x9ad65f, .22).setOrigin(0));
     const icon = this.add.sprite(bounds.x + 40, bounds.y + bounds.height / 2, 'moyu-icon');
     fitSprite(icon, 48, 48);
     bank.add(icon);
@@ -1660,14 +1656,12 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
     // Tall Spawn Slot: icon slightly above centre, value below. Empty remains a
     // visible empty slot rather than showing a fake plant.
     const slotCenter = this.getSpawnSlotCenter();
-    this.add.text(slotCenter.x, slotTop + 28, '摸鱼账户 / 提取口', { fontSize: '18px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
+    this.add.text(slotCenter.x, slotTop + 28, '摸鱼 / 出生槽', { fontSize: '18px', color: '#ffe7a3', stroke: '#57351d', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     if (visualBirthSlot !== null) {
       const bspr = this.addBreathingEntity(slotCenter.x, slotCenter.y - 35, PLANT_FRAME(visualBirthSlot), 110, 110, RENDER_DEPTH.UI, 3, 750, 'birth-slot');
       bspr.setData('birthSlot', true);
       const birthLabel = this.add.text(slotCenter.x, slotCenter.y + 126, String(visualBirthSlot), { fontSize: '36px', color: '#fff', stroke: '#18361d', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(.5).setDepth(RENDER_DEPTH.UI + 1);
       bspr.setData('birthLabel', birthLabel);
-    } else {
-      this.add.text(slotCenter.x, slotCenter.y + 46, '点击上方账户提取', { fontSize: '15px', color: '#c9d9a4', stroke: '#18361d', strokeThickness: 3 }).setOrigin(.5).setDepth(RENDER_DEPTH.UI);
     }
 
     // Moyu Pickups are battle entities, not instant income. Each uses a small
@@ -1718,13 +1712,17 @@ function fitSprite(spr: Phaser.GameObjects.Sprite, maxW: number, maxH: number) {
       espr.setData('enemyId', e.id);
 
       // HP label (相对 Ground Point 向上偏移)
-      const hpLabelY = placement.groundY - (e.height * ROW) * 0.22;
-      const hpLabel = this.add.text(placement.x, hpLabelY, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp}` : '', { fontSize: '22px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(10, 4).setOrigin(.5, 0).setDepth(placement.depth + 5);
+      const hpLabelY = placement.groundY - (e.height * ROW) * 0.72;
+      const hpBar = this.add.rectangle(placement.x, hpLabelY - 4, 82, 8, 0x27151a, .9).setOrigin(.5).setDepth(placement.depth + 4);
+      const hpFill = this.add.rectangle(placement.x - 38, hpLabelY - 4, Math.max(2, 76 * Math.max(0, Math.min(1, e.hp / Math.max(1, e.maxHp)))), 6, 0x79d45b, 1).setOrigin(0.5).setDepth(placement.depth + 5);
+      const hpLabel = this.add.text(placement.x, hpLabelY + 5, getAudioManager().getSettings().damageNumbersEnabled ? `${e.hp} / ${e.maxHp}` : '', { fontSize: '18px', color: '#fff', backgroundColor: '#7a3131' }).setPadding(7, 3).setOrigin(.5, 0).setDepth(placement.depth + 6);
       espr.add(hpLabel);
       espr.setData('hpLabel', hpLabel);
+      espr.setData('maxHp', e.maxHp);
+      espr.setData('hpFill', hpFill);
       const carrierValue = TurnManager.enemyMoyuValue(e);
       if (carrierValue > 0) {
-        const badge = this.add.container(placement.x + Math.min(58, placement.displayWidth * .32), hpLabelY - 10).setDepth(placement.depth + 6);
+        const badge = this.add.container(placement.x + Math.min(58, placement.displayWidth * .32), hpLabelY - 23).setDepth(placement.depth + 7);
         badge.add(this.add.rectangle(0, 0, 66, 36, 0x2f6a29, .96).setStrokeStyle(2, 0xc8f07b, 1).setOrigin(.5));
         badge.add(this.add.text(0, 0, `+${carrierValue}`, { fontSize: '20px', color: '#efffc8', stroke: '#17370f', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(.5));
       }

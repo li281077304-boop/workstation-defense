@@ -83,7 +83,7 @@ export class TurnManager {
   /** Pure capacity rule: the historical maximum Defender, never the live board. */
   static moyuCapacityFor(maxDefenderValue: number): number {
     const safeHighest = Number.isFinite(maxDefenderValue) ? Math.max(1, Math.floor(maxDefenderValue)) : 1;
-    return Math.min(32, Math.max(1, Math.floor(safeHighest / 4)));
+    return Math.min(32, Math.max(4, Math.floor(safeHighest / 4)));
   }
 
   static dismissalCostFor(value: number): number {
@@ -271,7 +271,11 @@ export class TurnManager {
 
   private fireAll() {
     for (let row = 0; row < BOARD.rows; row++) {
-      for (const plant of this.state.plants[row]) if (plant) {
+      // Resolve the defender nearest the enemy first. This is deterministic
+      // and independent of animation / creation order.
+      for (const col of Array.from({ length: BOARD.defenseCols }, (_, index) => BOARD.defenseCols - 1 - index)) {
+        const plant = this.state.plants[row][col];
+        if (!plant) continue;
         this.currentMetrics.theoreticalDamage += plant.value;
         for (const projectile of this.createProjectiles(plant.value, row)) {
           projectile.sourcePlantId = plant.id;
@@ -305,7 +309,8 @@ export class TurnManager {
     projectile.isAlive ??= true;
     this.record({ type: 'shot', lane: projectile.lane, damage: projectile.damage, sourcePlantId: projectile.sourcePlantId, subjectId: projectile.id, message: `Lane ${projectile.lane + 1} shot ${projectile.damage}` });
     while (projectile.isAlive && projectile.remainingDamage > 0) {
-      const target = this.nextTarget(projectile.lane, projectile.position);
+      const ignorePickupId = (projectile as Projectile & { ignorePickupId?: string }).ignorePickupId;
+      const target = this.nextTarget(projectile.lane, projectile.position, ignorePickupId);
       if (!target) {
         this.finishProjectile(projectile, 'overkill');
         return;
@@ -329,32 +334,39 @@ export class TurnManager {
         return;
       }
       projectile.remainingDamage -= hpBefore;
-      this.kill(target.enemy, target.col);
+      const dropped = this.kill(target.enemy, target.col);
+      if (dropped) (projectile as Projectile & { ignorePickupId?: string }).ignorePickupId = dropped.id;
       this.record({ type: 'pierce', lane: projectile.lane, col: target.col, subjectId: target.enemy.id, remainingDamage: projectile.remainingDamage, message: `Lane ${projectile.lane + 1} pierced ${target.enemy.id}; ${projectile.remainingDamage} remains` });
       if (projectile.remainingDamage === 0) { projectile.isAlive = false; this.record({ type: 'projectile-ended', subjectId: projectile.id, lane: projectile.lane, reason: 'enemy-absorbed', message: `Projectile ${projectile.id} spent on enemy` }); }
     }
   }
 
-  private nextTarget(lane: number, after: number): { kind: 'enemy'; enemy: Enemy; col: number } | { kind: 'moyu'; pickup: MoyuPickup; col: number } | null {
+  private nextTarget(lane: number, after: number, ignorePickupId?: string): { kind: 'enemy'; enemy: Enemy; col: number } | { kind: 'moyu'; pickup: MoyuPickup; col: number } | null {
     const enemies = this.state.enemies.filter(enemy => lane >= enemy.row && lane < enemy.row + enemy.height && enemy.col >= after)
       .map(enemy => ({ kind: 'enemy' as const, enemy, col: enemy.col }));
-    const pickups = this.state.moyuPickups.filter(pickup => !pickup.isCollected && pickup.row === lane && pickup.col >= after)
+    const pickups = this.state.moyuPickups.filter(pickup => pickup.id !== ignorePickupId && !pickup.isCollected && pickup.row === lane && pickup.col >= after)
       .map(pickup => ({ kind: 'moyu' as const, pickup, col: pickup.col }));
     // A pickup at the same cell is intentionally an intercepting blocker.
     return [...enemies, ...pickups].sort((a, b) => a.col - b.col || (a.kind === 'moyu' ? -1 : 1))[0] ?? null;
   }
 
-  private kill(enemy: Enemy, col: number) {
+  private kill(enemy: Enemy, col: number): MoyuPickup | null {
     this.state.enemies = this.state.enemies.filter(e => e.id !== enemy.id);
     if (this.rules.scoreMode === 'kill') this.state.score += enemy.maxHp;
     else if (this.rules.scoreMode === 'damage') this.state.score += enemy.hp; // last hit that killed it
     this.record({ type: 'kill', lane: enemy.row, col, subjectId: enemy.id, value: enemy.maxHp, message: `Defeated ${enemy.id} (+${enemy.maxHp})` });
     const value = TurnManager.enemyMoyuValue(enemy);
     if (value > 0) {
-      enemy.moyuValue = 0; // exactly-once guard before the delayed spawn.
-      this.pendingMoyuDrops.push({ value, row: enemy.row, col });
-      this.record({ type: 'moyu-drop-queued', lane: enemy.row, col, subjectId: enemy.id, value, message: `Queued Moyu ${value} drop from ${enemy.id}` });
+      enemy.moyuValue = 0; // exactly-once guard.
+      const pickup: MoyuPickup = { id: crypto.randomUUID(), value, row: enemy.row, col, isCollected: false, spawnTurn: this.state.turn };
+      this.state.moyuPickups.push(pickup);
+      this.state.totalMoyuGenerated += value;
+      this.currentMetrics.moyuPickupCount++;
+      this.record({ type: 'moyu-drop-queued', lane: enemy.row, col, subjectId: enemy.id, value, message: `Moyu ${value} drop appeared from ${enemy.id}` });
+      this.record({ type: 'moyu-spawned', subjectId: pickup.id, lane: pickup.row, col: pickup.col, value, message: `Moyu ${value} dropped onto battlefield` });
+      return pickup;
     }
+    return null;
   }
 
   private advanceEnemies() {
